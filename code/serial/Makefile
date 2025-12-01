@@ -1,6 +1,6 @@
 FC = mpif90
 #FCFLAGS = -O0 -Wall -pedantic -fcheck=all -fbacktrace -I. `nf-config --fflags`
-FCFLAGS = -Ofast -I. `nf-config --fflags` -fPIC
+FCFLAGS = -Ofast -I. `nf-config --fflags` -fPIC -fopenmp
 LDFLAGS = -L`nc-config --libdir` `nf-config --flibs`
 
 all: model
