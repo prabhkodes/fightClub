@@ -125,6 +125,58 @@ module module_types
     end do
   end subroutine update
 
+  ! subroutine xtend(tendency,flux,ref,atmostat,dx,dt)
+  !   implicit none
+  !   class(atmospheric_tendency), intent(inout) :: tendency
+  !   class(atmospheric_flux), intent(inout) :: flux
+  !   class(reference_state), intent(in) :: ref
+  !   class(atmospheric_state), intent(inout) :: atmostat
+  !   real(wp), intent(in) :: dx, dt
+  !   integer :: i, k, ll, s
+  !   real(wp) :: r, u, w, t, p, hv_coef
+  !   real(wp), dimension(STEN_SIZE) :: stencil
+  !   real(wp), dimension(NVARS) :: d3_vals, vals
+
+  !   call atmostat%exchange_halo_x( )
+
+  !   hv_coef = -hv_beta * dx / (16.0_wp*dt)
+  !   do k = 1, nz
+  !     do i = 1, nx+1
+  !       do ll = 1, NVARS
+  !         do s = 1, STEN_SIZE
+  !           stencil(s) = atmostat%mem(i-hs-1+s,k,ll)
+  !         end do
+  !         vals(ll) = - 1.0_wp * stencil(1)/12.0_wp &
+  !                    + 7.0_wp * stencil(2)/12.0_wp &
+  !                    + 7.0_wp * stencil(3)/12.0_wp &
+  !                    - 1.0_wp * stencil(4)/12.0_wp
+  !         d3_vals(ll) = - 1.0_wp * stencil(1) &
+  !                       + 3.0_wp * stencil(2) &
+  !                       - 3.0_wp * stencil(3) &
+  !                       + 1.0_wp * stencil(4)
+  !       end do
+  !       r = vals(I_DENS) + ref%density(k)
+  !       u = vals(I_UMOM) / r
+  !       w = vals(I_WMOM) / r
+  !       t = ( vals(I_RHOT) + ref%denstheta(k) ) / r
+  !       p = c0*(r*t)**cdocv
+  !       flux%dens(i,k) = r*u - hv_coef*d3_vals(I_DENS)
+  !       flux%umom(i,k) = r*u*u+p - hv_coef*d3_vals(I_UMOM)
+  !       flux%wmom(i,k) = r*u*w - hv_coef*d3_vals(I_WMOM)
+  !       flux%rhot(i,k) = r*u*t - hv_coef*d3_vals(I_RHOT)
+  !     end do
+  !   end do
+  !   do ll = 1, NVARS
+  !     do k = 1, nz
+  !       do i = 1, nx
+  !         tendency%mem(i,k,ll) = &
+  !             -( flux%mem(i+1,k,ll) - flux%mem(i,k,ll) ) / dx
+  !       end do
+  !     end do
+  !   end do
+  ! end subroutine xtend
+
+
   subroutine xtend(tendency,flux,ref,atmostat,dx,dt)
     implicit none
     class(atmospheric_tendency), intent(inout) :: tendency
@@ -134,12 +186,21 @@ module module_types
     real(wp), intent(in) :: dx, dt
     integer :: i, k, ll, s
     real(wp) :: r, u, w, t, p, hv_coef
+    ! These arrays are temps. We will make them PRIVATE so each thread gets its own copy.
     real(wp), dimension(STEN_SIZE) :: stencil
     real(wp), dimension(NVARS) :: d3_vals, vals
 
+    ! 1. Halo Exchange
+    ! Keep this SERIAL/OUTSIDE parallel region (usually involves MPI/Communication)
     call atmostat%exchange_halo_x( )
 
     hv_coef = -hv_beta * dx / (16.0_wp*dt)
+
+    ! 2. Flux Calculation
+    ! We parallelize the outer loop (k).
+    ! CRITICAL: stencil, vals, and d3_vals must be PRIVATE.
+    !$omp parallel do default(shared) &
+    !$omp private(i, k, ll, s, stencil, vals, d3_vals, r, u, w, t, p)
     do k = 1, nz
       do i = 1, nx+1
         do ll = 1, NVARS
@@ -166,6 +227,12 @@ module module_types
         flux%rhot(i,k) = r*u*t - hv_coef*d3_vals(I_RHOT)
       end do
     end do
+    !$omp end parallel do
+
+    ! 3. Tendency Update
+    ! We collapse ll and k to ensure enough work for threads 
+    ! (since NVARS is usually small, just parallelizing ll is inefficient)
+    !$omp parallel do default(shared) private(i, k, ll) collapse(2)
     do ll = 1, NVARS
       do k = 1, nz
         do i = 1, nx
@@ -174,7 +241,10 @@ module module_types
         end do
       end do
     end do
+    !$omp end parallel do
+
   end subroutine xtend
+
 
   subroutine ztend(tendency,flux,ref,atmostat,dz,dt)
     implicit none
@@ -185,12 +255,22 @@ module module_types
     real(wp), intent(in) :: dz, dt
     integer :: i, k, ll, s
     real(wp) :: r, u, w, t, p, hv_coef
+    ! Temporary arrays must be PRIVATE so every thread has its own scratchpad
     real(wp), dimension(STEN_SIZE) :: stencil
     real(wp), dimension(NVARS) :: d3_vals, vals
 
+    ! 1. Halo Exchange
+    ! Keep this SERIAL. It likely involves MPI or global memory shifts.
     call atmostat%exchange_halo_z(ref)
 
     hv_coef = -hv_beta * dz / (16.0_wp*dt)
+
+    ! 2. Vertical Flux Calculation
+    ! We parallelize the outer loop (k).
+    ! Note: 'flux', 'atmostat', 'ref' are SHARED (default).
+    ! 'stencil', 'vals', 'd3_vals' are PRIVATE.
+    !$omp parallel do default(shared) &
+    !$omp private(i, k, ll, s, stencil, vals, d3_vals, r, u, w, t, p)
     do k = 1, nz+1
       do i = 1, nx
         do ll = 1, NVARS
@@ -211,29 +291,101 @@ module module_types
         w = vals(I_WMOM) / r
         t = ( vals(I_RHOT) + ref%idenstheta(k) ) / r
         p = c0*(r*t)**cdocv - ref%pressure(k)
+        
+        ! This IF statement is thread-safe because it relies only on 'k'
         if (k == 1 .or. k == nz+1) then
           w = 0.0_wp
           d3_vals(I_DENS) = 0.0_wp
         end if
+        
         flux%dens(i,k) = r*w - hv_coef*d3_vals(I_DENS)
         flux%umom(i,k) = r*w*u - hv_coef*d3_vals(I_UMOM)
         flux%wmom(i,k) = r*w*w+p - hv_coef*d3_vals(I_WMOM)
         flux%rhot(i,k) = r*w*t - hv_coef*d3_vals(I_RHOT)
       end do
     end do
+    !$omp end parallel do
 
+    ! 3. Tendency Update
+    ! We collapse ll and k. 
+    ! Since NVARS is small (~4-5), parallelizing only 'll' is inefficient.
+    ! Collapsing (NVARS * nz) creates a much larger pool of work.
+    !$omp parallel do default(shared) private(i, k, ll) collapse(2)
     do ll = 1, NVARS
       do k = 1, nz
         do i = 1, nx
           tendency%mem(i,k,ll) = &
               -( flux%mem(i,k+1,ll) - flux%mem(i,k,ll) ) / dz
+          
+          ! Adding gravity source term
           if (ll == I_WMOM) then
             tendency%wmom(i,k) = tendency%wmom(i,k) - atmostat%dens(i,k)*grav
           end if
         end do
       end do
     end do
+    !$omp end parallel do
+    
   end subroutine ztend
+
+  ! subroutine ztend(tendency,flux,ref,atmostat,dz,dt)
+  !   implicit none
+  !   class(atmospheric_tendency), intent(inout) :: tendency
+  !   class(atmospheric_flux), intent(inout) :: flux
+  !   class(reference_state), intent(in) :: ref
+  !   class(atmospheric_state), intent(inout) :: atmostat
+  !   real(wp), intent(in) :: dz, dt
+  !   integer :: i, k, ll, s
+  !   real(wp) :: r, u, w, t, p, hv_coef
+  !   real(wp), dimension(STEN_SIZE) :: stencil
+  !   real(wp), dimension(NVARS) :: d3_vals, vals
+
+  !   call atmostat%exchange_halo_z(ref)
+
+  !   hv_coef = -hv_beta * dz / (16.0_wp*dt)
+  !   do k = 1, nz+1
+  !     do i = 1, nx
+  !       do ll = 1, NVARS
+  !         do s = 1, STEN_SIZE
+  !           stencil(s) = atmostat%mem(i,k-hs-1+s,ll)
+  !         end do
+  !         vals(ll) = - 1.0_wp * stencil(1)/12.0_wp &
+  !                    + 7.0_wp * stencil(2)/12.0_wp &
+  !                    + 7.0_wp * stencil(3)/12.0_wp &
+  !                    - 1.0_wp * stencil(4)/12.0_wp
+  !         d3_vals(ll) = - 1.0_wp * stencil(1) &
+  !                       + 3.0_wp * stencil(2) &
+  !                       - 3.0_wp * stencil(3) &
+  !                       + 1.0_wp * stencil(4)
+  !       end do
+  !       r = vals(I_DENS) + ref%idens(k)
+  !       u = vals(I_UMOM) / r
+  !       w = vals(I_WMOM) / r
+  !       t = ( vals(I_RHOT) + ref%idenstheta(k) ) / r
+  !       p = c0*(r*t)**cdocv - ref%pressure(k)
+  !       if (k == 1 .or. k == nz+1) then
+  !         w = 0.0_wp
+  !         d3_vals(I_DENS) = 0.0_wp
+  !       end if
+  !       flux%dens(i,k) = r*w - hv_coef*d3_vals(I_DENS)
+  !       flux%umom(i,k) = r*w*u - hv_coef*d3_vals(I_UMOM)
+  !       flux%wmom(i,k) = r*w*w+p - hv_coef*d3_vals(I_WMOM)
+  !       flux%rhot(i,k) = r*w*t - hv_coef*d3_vals(I_RHOT)
+  !     end do
+  !   end do
+
+  !   do ll = 1, NVARS
+  !     do k = 1, nz
+  !       do i = 1, nx
+  !         tendency%mem(i,k,ll) = &
+  !             -( flux%mem(i,k+1,ll) - flux%mem(i,k,ll) ) / dz
+  !         if (ll == I_WMOM) then
+  !           tendency%wmom(i,k) = tendency%wmom(i,k) - atmostat%dens(i,k)*grav
+  !         end if
+  !       end do
+  !     end do
+  !   end do
+  ! end subroutine ztend
 
   subroutine exchange_halo_x(s)
     implicit none
