@@ -1,4 +1,5 @@
 program atmosphere_model
+  use mpi
   use calculation_types, only : wp
   use module_physics, only : dt, oldstat, newstat, flux, tend, ref
   use module_physics, only : init, finalize
@@ -6,6 +7,7 @@ program atmosphere_model
   use module_output, only : create_output, write_record, close_output
   use dimensions , only : sim_time, output_freq
   use iodir, only : stdout
+  use parallel_timer
   implicit none
 
   real(wp) :: etime
@@ -16,13 +18,33 @@ program atmosphere_model
   real(wp) :: mass1, te1
   integer(8) :: t1, t2, rate
 
-  write(stdout, *) 'SIMPLE ATMOSPHERIC MODEL STARTING.'
+  ! --- NEW VARIABLES ---
+  integer :: ierr
+  integer :: my_rank
+  integer :: dt_values(8) 
+  real(8) :: final_duration
+  ! ---------------------
+
+
+  call MPI_INIT(ierr)
+  call MPI_COMM_RANK(MPI_COMM_WORLD, my_rank, ierr)
+
+  ! --- PRINT START TIME (Rank 0 Only) ---
+  if (my_rank == 0) then
+      call date_and_time(values=dt_values)
+      write(stdout, *) 'SIMPLE ATMOSPHERIC MODEL STARTING.'
+      ! Format: HH:MM:SS.Milliseconds
+      write(stdout, '(a,I2.2,a,I2.2,a,I2.2,a,I3.3)') &
+        "Wall Clock Start: ", dt_values(5), ":", dt_values(6), ":", dt_values(7), ".", dt_values(8)
+  end if
+
   call init(etime,output_counter,dt)
   call total_mass_energy(mass0,te0)
   call create_output( )
   call write_record(oldstat,ref,etime)
 
-  call system_clock(t1)
+  ! Get initial tick count and the clock rate (ticks per second)
+  call system_clock(t1, rate) 
 
   ptime = int(sim_time/10.0)
   do while (etime < sim_time)
@@ -33,7 +55,9 @@ program atmosphere_model
 
     if ( mod(etime,ptime) < dt ) then
       pctime = (etime/sim_time)*100.0_wp
-      write(stdout,'(1x,a,i2,a)') 'TIME PERCENT : ', int(pctime), '%'
+      if (my_rank == 0) then
+         write(stdout,'(1x,a,i2,a)') 'TIME PERCENT : ', int(pctime), '%'
+      end if
     end if
 
     etime = etime + dt
@@ -49,15 +73,33 @@ program atmosphere_model
   call total_mass_energy(mass1,te1)
   call close_output( )
 
-  write(stdout,*) "----------------- Atmosphere check ----------------"
-  write(stdout,*) "Fractional Delta Mass  : ", (mass1-mass0)/mass0
-  write(stdout,*) "Fractional Delta Energy: ", (te1-te0)/te0
-  write(stdout,*) "---------------------------------------------------"
+  if (my_rank == 0) then
+      write(stdout,*) "----------------- Atmosphere check ----------------"
+      write(stdout,*) "Fractional Delta Mass  : ", (mass1-mass0)/mass0
+      write(stdout,*) "Fractional Delta Energy: ", (te1-te0)/te0
+      write(stdout,*) "---------------------------------------------------"
+  end if
 
   call finalize()
-  call system_clock(t2,rate)
+  call print_timing_results()
+  
+  ! Get final tick count
+  call system_clock(t2)
 
-  write(stdout,*) "SIMPLE ATMOSPHERIC MODEL RUN COMPLETED."
-  write(stdout,*) "USED CPU TIME: ", dble(t2-t1)/dble(rate)
+  ! --- PRINT END TIME (Rank 0 Only) ---
+  if (my_rank == 0) then
+      call date_and_time(values=dt_values)
+      write(stdout,*) "SIMPLE ATMOSPHERIC MODEL RUN COMPLETED."
+      
+      ! 1. Print Wall Clock with Milliseconds
+      write(stdout, '(a,I2.2,a,I2.2,a,I2.2,a,I3.3)') &
+        "Wall Clock End:   ", dt_values(5), ":", dt_values(6), ":", dt_values(7), ".", dt_values(8)
+      
+      ! 2. Print Duration with Microsecond Precision
+      final_duration = dble(t2-t1)/dble(rate)
+      write(stdout, '(a,F18.6,a)') "USED CPU TIME:    ", final_duration, " seconds"
+  end if
+
+  call MPI_FINALIZE(ierr)
 
 end program atmosphere_model
