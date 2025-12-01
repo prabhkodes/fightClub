@@ -33,12 +33,12 @@ module module_physics
   subroutine init(etime,output_counter,dt)
     implicit none
 
-    type(CTimer) :: t_init 
+    type(CTimer) :: pll_timer 
     real(wp), intent(out) :: etime, output_counter, dt
     integer :: i, k, ii, kk
     real(wp) :: x, z, r, u, w, t, hr, ht
 
-    t_init = CTimer("Initialization")
+    call pll_timer%start("INIT")
 
     dx = xlen / nx
     dz = zlen / nz
@@ -106,7 +106,7 @@ module module_physics
   subroutine rungekutta(s0,s1,fl,tend,dt)
     implicit none
 
-    type(CTimer) :: t_init 
+    type(CTimer) :: pll_timer 
     type(atmospheric_state), intent(inout) :: s0
     type(atmospheric_state), intent(inout) :: s1
     type(atmospheric_flux), intent(inout) :: fl
@@ -115,7 +115,7 @@ module module_physics
     real(wp) :: dt1, dt2, dt3
     logical, save :: dimswitch = .true.
 
-    t_init = CTimer("Range Kutta")
+    call pll_timer%start("Computation: rungekutta")
 
     dt1 = dt/1.0_wp
     dt2 = dt/2.0_wp
@@ -143,7 +143,7 @@ module module_physics
   subroutine step(s0, s1, s2, dt, dir, fl, tend)
     implicit none
 
-    type(CTimer) :: t_init 
+    type(CTimer) :: pll_timer 
     type(atmospheric_state), intent(in) :: s0
     type(atmospheric_state), intent(inout) :: s1
     type(atmospheric_state), intent(inout) :: s2
@@ -152,7 +152,7 @@ module module_physics
     real(wp), intent(in) :: dt
     integer, intent(in) :: dir
 
-    t_init = CTimer("Calculation: Step")
+    call pll_timer%start("Computation: step")
 
     if (dir == DIR_X) then
       call tend%xtend(fl,ref,s1,dx,dt)
@@ -164,11 +164,11 @@ module module_physics
 
   subroutine thermal(x,z,r,u,w,t,hr,ht)
     implicit none
-    type(CTimer) :: t_init 
+    type(CTimer) :: pll_timer 
     real(wp), intent(in) :: x, z
     real(wp), intent(out) :: r, u, w, t
     real(wp), intent(out) :: hr, ht
-    t_init = CTimer("Calculation: Thermal")
+    call pll_timer%start("Computation: thermal")
     call hydrostatic_const_theta(z,hr,ht)
     r = 0.0_wp
     t = 0.0_wp
@@ -180,12 +180,12 @@ module module_physics
   subroutine hydrostatic_const_theta(z,r,t)
     implicit none
 
-    type(CTimer) :: t_init 
+    type(CTimer) :: pll_timer 
     real(wp), intent(in) :: z
     real(wp), intent(out) :: r, t
     real(wp) :: p,exner,rt
 
-    t_init = CTimer("Calculation: Hydrostatic Const Theta")
+    call pll_timer%start("Computation: hydrostatic_const_theta")
 
     t = theta0
     exner = exner0 - grav * z / (cp * theta0)
@@ -224,12 +224,12 @@ module module_physics
   subroutine total_mass_energy(mass,te)
     implicit none
     
-    type(CTimer) :: t_init 
+    type(CTimer) :: pll_timer 
     real(wp), intent(out) :: mass, te
     integer :: i, k
     real(wp) :: r, u, w, th, p, t, ke, ie
 
-    t_init = CTimer("Calculation: Total Mass Energy")
+    call pll_timer%start("Computation: total_mass_energy")
 
     mass = 0.0_wp
     te = 0.0_wp
