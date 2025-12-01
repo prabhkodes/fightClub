@@ -1,4 +1,5 @@
 program atmosphere_model
+  use mpi
   use calculation_types, only : wp
   use module_physics, only : dt, oldstat, newstat, flux, tend, ref
   use module_physics, only : init, finalize
@@ -6,6 +7,7 @@ program atmosphere_model
   use module_output, only : create_output, write_record, close_output
   use dimensions , only : sim_time, output_freq
   use iodir, only : stdout
+  use parallel_timer
   implicit none
 
   real(wp) :: etime
@@ -15,8 +17,12 @@ program atmosphere_model
   real(wp) :: mass0, te0
   real(wp) :: mass1, te1
   integer(8) :: t1, t2, rate
+  integer :: ierr
 
   write(stdout, *) 'SIMPLE ATMOSPHERIC MODEL STARTING.'
+
+  call MPI_INIT(ierr)
+
   call init(etime,output_counter,dt)
   call total_mass_energy(mass0,te0)
   call create_output( )
@@ -55,9 +61,12 @@ program atmosphere_model
   write(stdout,*) "---------------------------------------------------"
 
   call finalize()
+  call print_timing_results()
   call system_clock(t2,rate)
 
   write(stdout,*) "SIMPLE ATMOSPHERIC MODEL RUN COMPLETED."
   write(stdout,*) "USED CPU TIME: ", dble(t2-t1)/dble(rate)
+
+  call MPI_FINALIZE(ierr)
 
 end program atmosphere_model
