@@ -1,3 +1,2 @@
-# docker build -t fortran-mpi:latest .
-docker container rm -f fortran-mpi
-docker run -it --name fortran-mpi -v $PWD/code:/app fortran-mpi:latest
+docker build -t atmosphere-model:latest .
+docker run --rm -it --name atmosphere-model -v $PWD/code/serial:/app atmosphere-model:latest

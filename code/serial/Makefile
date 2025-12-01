@@ -23,3 +23,24 @@ module_physics.o : module_physics.f90 module_types.o
 
 clean :
 	rm -f *.o *.mod model *.nc
+
+
+test: model
+	@echo "Running model test..."
+	@OUTPUT=$$(./model); \
+	echo "$$OUTPUT"; \
+	MASS=$$(echo "$$OUTPUT" | awk '/Fractional Delta Mass/{print $$NF}'); \
+	ENERGY=$$(echo "$$OUTPUT" | awk '/Fractional Delta Energy/{print $$NF}'); \
+	echo "Parsed Mass   = $$MASS"; \
+	echo "Parsed Energy = $$ENERGY"; \
+	awk -v m="$$MASS" -v e="$$ENERGY" 'BEGIN { \
+	  mass = m + 0; energy = e + 0; \
+	  if (mass < 1e-13 && energy < 1e-3) { \
+	    print "TEST PASSED."; exit 0; \
+	  } else { \
+	    print "TEST FAILED: thresholds exceeded."; \
+	    printf "  mass   = %e  (limit 1e-13)\n", mass; \
+	    printf "  energy = %e  (limit 1e-3)\n", energy; \
+	    exit 1; \
+	  } \
+	}'
