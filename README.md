@@ -1,4 +1,5 @@
-# P1.7 - Best Practices in Scientific Software Development
+# P1.8 - Best Practices in Scientific Software Development
+## 2-D Euler Equations
 First rule of fight club is we don't talk about fight club.
 
 ## Leonardo
