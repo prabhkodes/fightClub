@@ -18,8 +18,7 @@ module load gcc/12.2.0
 # MPI
 module load openmpi/4.1.6--gcc--12.2.0-cuda-12.2
 
-# NetCDF C y Fortran compile with MPI + GCC
-module load netcdf-c/4.9.2--openmpi--4.1.6--gcc--12.2.0-spack0.22
+# NetCDF Fortran compile with MPI + GCC
 module load netcdf-fortran/4.6.1--openmpi--4.1.6--gcc--12.2.0-spack0.22
 
 export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
