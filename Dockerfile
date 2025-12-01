@@ -2,7 +2,6 @@ FROM ubuntu:22.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Install system-level dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gfortran \
     valgrind \
@@ -10,6 +9,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     cmake \
     vim \
     mpich \
+    libmpich-dev \
     libpnetcdf-dev \
     libnetcdf-dev \
     libnetcdff-dev \
