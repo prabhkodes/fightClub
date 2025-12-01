@@ -8,6 +8,7 @@ module module_physics
   use dimensions
   use iodir
   use module_types
+  use parallel_timer
 
   implicit none
 
@@ -31,9 +32,13 @@ module module_physics
 
   subroutine init(etime,output_counter,dt)
     implicit none
+
+    type(CTimer) :: t_init 
     real(wp), intent(out) :: etime, output_counter, dt
     integer :: i, k, ii, kk
     real(wp) :: x, z, r, u, w, t, hr, ht
+
+    t_init = CTimer("Initialization")
 
     dx = xlen / nx
     dz = zlen / nz
@@ -100,6 +105,8 @@ module module_physics
 
   subroutine rungekutta(s0,s1,fl,tend,dt)
     implicit none
+
+    type(CTimer) :: t_init 
     type(atmospheric_state), intent(inout) :: s0
     type(atmospheric_state), intent(inout) :: s1
     type(atmospheric_flux), intent(inout) :: fl
@@ -107,6 +114,8 @@ module module_physics
     real(wp), intent(in) :: dt
     real(wp) :: dt1, dt2, dt3
     logical, save :: dimswitch = .true.
+
+    t_init = CTimer("Range Kutta")
 
     dt1 = dt/1.0_wp
     dt2 = dt/2.0_wp
@@ -133,6 +142,8 @@ module module_physics
   ! s2 = s0 + dt * rhs(s1)
   subroutine step(s0, s1, s2, dt, dir, fl, tend)
     implicit none
+
+    type(CTimer) :: t_init 
     type(atmospheric_state), intent(in) :: s0
     type(atmospheric_state), intent(inout) :: s1
     type(atmospheric_state), intent(inout) :: s2
@@ -140,6 +151,9 @@ module module_physics
     type(atmospheric_tendency), intent(inout) :: tend
     real(wp), intent(in) :: dt
     integer, intent(in) :: dir
+
+    t_init = CTimer("Calculation: Step")
+
     if (dir == DIR_X) then
       call tend%xtend(fl,ref,s1,dx,dt)
     else if (dir == DIR_Z) then
@@ -150,9 +164,11 @@ module module_physics
 
   subroutine thermal(x,z,r,u,w,t,hr,ht)
     implicit none
+    type(CTimer) :: t_init 
     real(wp), intent(in) :: x, z
     real(wp), intent(out) :: r, u, w, t
     real(wp), intent(out) :: hr, ht
+    t_init = CTimer("Calculation: Thermal")
     call hydrostatic_const_theta(z,hr,ht)
     r = 0.0_wp
     t = 0.0_wp
@@ -163,9 +179,14 @@ module module_physics
 
   subroutine hydrostatic_const_theta(z,r,t)
     implicit none
+
+    type(CTimer) :: t_init 
     real(wp), intent(in) :: z
     real(wp), intent(out) :: r, t
     real(wp) :: p,exner,rt
+
+    t_init = CTimer("Calculation: Hydrostatic Const Theta")
+
     t = theta0
     exner = exner0 - grav * z / (cp * theta0)
     p = p0 * exner**(cp/rd)
@@ -175,12 +196,14 @@ module module_physics
 
   elemental function ellipse(x,z,amp,x0,z0,x1,z1) result(val)
     implicit none
+    
     real(wp), intent(in) :: x, z
     real(wp), intent(in) :: amp
     real(wp), intent(in) :: x0, z0
     real(wp), intent(in) :: x1, z1
     real(wp) :: val
     real(wp) :: dist
+
     dist = sqrt( ((x-x0)/x1)**2 + ((z-z0)/z1)**2 ) * hpi
     if (dist <= hpi) then
       val = amp * cos(dist)**2
@@ -200,9 +223,14 @@ module module_physics
 
   subroutine total_mass_energy(mass,te)
     implicit none
+    
+    type(CTimer) :: t_init 
     real(wp), intent(out) :: mass, te
     integer :: i, k
     real(wp) :: r, u, w, th, p, t, ke, ie
+
+    t_init = CTimer("Calculation: Total Mass Energy")
+
     mass = 0.0_wp
     te = 0.0_wp
     do k = 1, nz
