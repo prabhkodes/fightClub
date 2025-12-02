@@ -146,9 +146,12 @@ program atmosphere_model
     if (output_counter >= output_freq) then
       output_counter = output_counter - output_freq
 #ifdef USE_OPENACC
-      !$acc update self(oldstat%mem)
+      !$acc exit data copyout(oldstat%mem)
 #endif
       call write_record(oldstat,ref,etime)
+#ifdef USE_OPENACC
+      !$acc enter data copyin(oldstat%mem)
+#endif
     end if
 
   end do
