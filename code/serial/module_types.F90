@@ -2,10 +2,10 @@ module module_types
   use calculation_types
   use physical_constants
   use physical_parameters
-  use parallel_parameters
+  use parallel_parameters      
   use indexing
   use legendre_quadrature
-  use dimensions
+  use dimensions, only : nz    
   use iodir
 
   implicit none
@@ -77,11 +77,19 @@ module module_types
 
   contains
 
+  subroutine state_equal_to_state(x,y)
+    implicit none
+    type(atmospheric_state), intent(inout) :: x
+    type(atmospheric_state), intent(in) :: y
+    x%mem(:,:,:) = y%mem(:,:,:)
+  end subroutine state_equal_to_state
+
   subroutine new_state(atmo)
+    use parallel_parameters, only : nx_local, hs
     implicit none
     class(atmospheric_state), intent(inout) :: atmo
     if ( associated(atmo%mem) ) deallocate(atmo%mem)
-    allocate(atmo%mem(1-hs:nx+hs, 1-hs:nz+hs, NVARS))
+    allocate(atmo%mem(1-hs:nx_local+hs, 1-hs:nz+hs, NVARS))  ! Use nx_local
     atmo%dens(1-hs:,1-hs:) => atmo%mem(:,:,I_DENS)
     atmo%umom(1-hs:,1-hs:) => atmo%mem(:,:,I_UMOM)
     atmo%wmom(1-hs:,1-hs:) => atmo%mem(:,:,I_WMOM)
@@ -110,6 +118,7 @@ module module_types
   end subroutine del_state
 
   subroutine update(s2,s0,tend,dt)
+    use parallel_parameters, only : nx_local
     implicit none
     class(atmospheric_state), intent(inout) :: s2
     class(atmospheric_state), intent(in) :: s0
@@ -119,16 +128,16 @@ module module_types
     
     do ll = 1, NVARS
       do k = 1, nz
-        do i = 1, nx
+        do i = 1, nx_local
           s2%mem(i,k,ll) = s0%mem(i,k,ll) + dt * tend%mem(i,k,ll)
         end do
       end do
     end do
-    
   end subroutine update
 
 
   subroutine xtend(tendency,flux,ref,atmostat,dx,dt)
+    use parallel_parameters, only : nx_local, hs
     implicit none
     class(atmospheric_tendency), intent(inout) :: tendency
     class(atmospheric_flux), intent(inout) :: flux
@@ -141,14 +150,12 @@ module module_types
     real(wp), dimension(STEN_SIZE) :: stencil
     real(wp), dimension(NVARS) :: d3_vals, vals
 
-    call atmostat%exchange_halo_x( )
 
     hv_coef = -hv_beta * dx / (16.0_wp*dt)
 
-    !$omp parallel do default(shared) &
-    !$omp private(i, k, ll, s, stencil, vals, d3_vals, r, u, w, t, p)
+    !$omp parallel do default(shared) private(i, k, ll, s, stencil, vals, d3_vals, r, u, w, t, p)
     do k = 1, nz
-      do i = 1, nx+1
+      do i = 1, nx_local + 1 
         do ll = 1, NVARS
           do s = 1, STEN_SIZE
             stencil(s) = atmostat%mem(i-hs-1+s,k,ll)
@@ -178,18 +185,17 @@ module module_types
     !$omp parallel do default(shared) private(i, k, ll) collapse(2)
     do ll = 1, NVARS
       do k = 1, nz
-        do i = 1, nx
-          tendency%mem(i,k,ll) = &
-              -( flux%mem(i+1,k,ll) - flux%mem(i,k,ll) ) / dx
+        do i = 1, nx_local 
+          tendency%mem(i,k,ll) = -( flux%mem(i+1,k,ll) - flux%mem(i,k,ll) ) / dx
         end do
       end do
     end do
     !$omp end parallel do
-
   end subroutine xtend
 
 
   subroutine ztend(tendency,flux,ref,atmostat,dz,dt)
+    use parallel_parameters, only : nx_local, hs
     implicit none
     class(atmospheric_tendency), intent(inout) :: tendency
     class(atmospheric_flux), intent(inout) :: flux
@@ -205,12 +211,11 @@ module module_types
 
     hv_coef = -hv_beta * dz / (16.0_wp*dt)
 
-    !$omp parallel do default(shared) &
-    !$omp private(i, k, ll, s, stencil, vals, d3_vals, r, u, w, t, p)
+    !$omp parallel do default(shared) private(i, k, ll, s, stencil, vals, d3_vals, r, u, w, t, p)
     do k = 1, nz+1
-      do i = 1, nx
+      do i = 1, nx_local  
         do ll = 1, NVARS
-          do s = 1, STEN_SIZE
+           do s = 1, STEN_SIZE
             stencil(s) = atmostat%mem(i,k-hs-1+s,ll)
           end do
           vals(ll) = - 1.0_wp * stencil(1)/12.0_wp &
@@ -227,13 +232,10 @@ module module_types
         w = vals(I_WMOM) / r
         t = ( vals(I_RHOT) + ref%idenstheta(k) ) / r
         p = c0*(r*t)**cdocv - ref%pressure(k)
-        
-        ! This IF statement is thread-safe because it relies only on 'k'
         if (k == 1 .or. k == nz+1) then
           w = 0.0_wp
           d3_vals(I_DENS) = 0.0_wp
         end if
-        
         flux%dens(i,k) = r*w - hv_coef*d3_vals(I_DENS)
         flux%umom(i,k) = r*w*u - hv_coef*d3_vals(I_UMOM)
         flux%wmom(i,k) = r*w*w+p - hv_coef*d3_vals(I_WMOM)
@@ -245,11 +247,8 @@ module module_types
     !$omp parallel do default(shared) private(i, k, ll) collapse(2)
     do ll = 1, NVARS
       do k = 1, nz
-        do i = 1, nx
-          tendency%mem(i,k,ll) = &
-              -( flux%mem(i,k+1,ll) - flux%mem(i,k,ll) ) / dz
-          
-          ! Adding gravity source term
+        do i = 1, nx_local 
+          tendency%mem(i,k,ll) = -( flux%mem(i,k+1,ll) - flux%mem(i,k,ll) ) / dz
           if (ll == I_WMOM) then
             tendency%wmom(i,k) = tendency%wmom(i,k) - atmostat%dens(i,k)*grav
           end if
@@ -257,31 +256,22 @@ module module_types
       end do
     end do
     !$omp end parallel do
-    
   end subroutine ztend
-
 
   subroutine exchange_halo_x(s)
     implicit none
     class(atmospheric_state), intent(inout) :: s
-    integer :: k, ll
-    do ll = 1, NVARS
-      do k = 1, nz
-        s%mem(-1,k,ll)   = s%mem(nx-1,k,ll)
-        s%mem(0,k,ll)    = s%mem(nx,k,ll)
-        s%mem(nx+1,k,ll) = s%mem(1,k,ll)
-        s%mem(nx+2,k,ll) = s%mem(2,k,ll)
-      end do
-    end do
+
   end subroutine exchange_halo_x
 
   subroutine exchange_halo_z(s,ref)
+    use parallel_parameters, only : nx_local, hs
     implicit none
     class(atmospheric_state), intent(inout) :: s
     class(reference_state), intent(in) :: ref
     integer :: i, ll
     do ll = 1, NVARS
-      do i = 1-hs,nx+hs
+      do i = 1-hs, nx_local+hs 
         if (ll == I_WMOM) then
           s%mem(i,-1,ll) = 0.0_wp
           s%mem(i,0,ll) = 0.0_wp
@@ -306,6 +296,70 @@ module module_types
     end do
   end subroutine exchange_halo_z
 
+
+  subroutine new_flux(flux)
+    use parallel_parameters, only : nx_local, hs
+    implicit none
+    class(atmospheric_flux), intent(inout) :: flux
+    if ( associated(flux%mem) ) deallocate(flux%mem)
+    
+    allocate(flux%mem(1-hs:nx_local+hs, 1-hs:nz+hs, NVARS))
+    
+    flux%dens(1-hs:,1-hs:) => flux%mem(:,:,I_DENS)
+    flux%umom(1-hs:,1-hs:) => flux%mem(:,:,I_UMOM)
+    flux%wmom(1-hs:,1-hs:) => flux%mem(:,:,I_WMOM)
+    flux%rhot(1-hs:,1-hs:) => flux%mem(:,:,I_RHOT)
+  end subroutine new_flux
+
+  subroutine set_flux(flux, xval)
+    implicit none
+    class(atmospheric_flux), intent(inout) :: flux
+    real(wp), intent(in) :: xval
+    if ( .not. associated(flux%mem) ) then
+      write(stderr,*) 'NOT ALLOCATED FLUX ERROR'
+      stop
+    end if
+    flux%mem(:,:,:) = xval
+  end subroutine set_flux
+
+  subroutine del_flux(flux)
+    implicit none
+    class(atmospheric_flux), intent(inout) :: flux
+    if ( associated(flux%mem) ) deallocate(flux%mem)
+    nullify(flux%dens, flux%umom, flux%wmom, flux%rhot)
+  end subroutine del_flux
+
+  subroutine new_tendency(tend)
+    use parallel_parameters, only : nx_local
+    implicit none
+    class(atmospheric_tendency), intent(inout) :: tend
+    if ( associated(tend%mem) ) deallocate(tend%mem)
+    
+    ! FIX: Use nx_local
+    allocate(tend%mem(nx_local, nz, NVARS))
+    
+    tend%dens => tend%mem(:,:,I_DENS)
+    tend%umom => tend%mem(:,:,I_UMOM)
+    tend%wmom => tend%mem(:,:,I_WMOM)
+    tend%rhot => tend%mem(:,:,I_RHOT)
+  end subroutine new_tendency
+
+  subroutine set_tendency(tend, xval)
+    implicit none
+    class(atmospheric_tendency), intent(inout) :: tend
+    real(wp), intent(in) :: xval
+    if ( .not. associated(tend%mem) ) stop 'Tendency not allocated'
+    tend%mem(:,:,:) = xval
+  end subroutine set_tendency
+
+  subroutine del_tendency(tend)
+    implicit none
+    class(atmospheric_tendency), intent(inout) :: tend
+    if ( associated(tend%mem) ) deallocate(tend%mem)
+    nullify(tend%dens, tend%umom, tend%wmom, tend%rhot)
+  end subroutine del_tendency
+
+
   subroutine new_ref(ref)
     implicit none
     class(reference_state), intent(inout) :: ref
@@ -319,82 +373,11 @@ module module_types
   subroutine del_ref(ref)
     implicit none
     class(reference_state), intent(inout) :: ref
-    deallocate(ref%density)
-    deallocate(ref%denstheta)
-    deallocate(ref%idens)
-    deallocate(ref%idenstheta)
-    deallocate(ref%pressure)
+    if (allocated(ref%density)) deallocate(ref%density)
+    if (allocated(ref%denstheta)) deallocate(ref%denstheta)
+    if (allocated(ref%idens)) deallocate(ref%idens)
+    if (allocated(ref%idenstheta)) deallocate(ref%idenstheta)
+    if (allocated(ref%pressure)) deallocate(ref%pressure)
   end subroutine del_ref
-
-  subroutine new_flux(flux)
-    implicit none
-    class(atmospheric_flux), intent(inout) :: flux
-    if ( associated(flux%mem) ) deallocate(flux%mem)
-    allocate(flux%mem(1:nx+1, 1:nz+1,NVARS))
-    flux%dens => flux%mem(:,:,I_DENS)
-    flux%umom => flux%mem(:,:,I_UMOM)
-    flux%wmom => flux%mem(:,:,I_WMOM)
-    flux%rhot => flux%mem(:,:,I_RHOT)
-  end subroutine new_flux
-
-  subroutine set_flux(flux, xval)
-    implicit none
-    class(atmospheric_flux), intent(inout) :: flux
-    real(wp), intent(in) :: xval
-    if ( .not. associated(flux%mem) ) then
-      write(stderr,*) 'NOT ALLOCATED FLUX ERROR AT LINE ', __LINE__
-      stop
-    end if
-    flux%mem(:,:,:) = xval
-  end subroutine set_flux
-
-  subroutine del_flux(flux)
-    implicit none
-    class(atmospheric_flux), intent(inout) :: flux
-    if ( associated(flux%mem) ) deallocate(flux%mem)
-    nullify(flux%dens)
-    nullify(flux%umom)
-    nullify(flux%wmom)
-    nullify(flux%rhot)
-  end subroutine del_flux
-
-  subroutine new_tendency(tend)
-    implicit none
-    class(atmospheric_tendency), intent(inout) :: tend
-    if ( associated(tend%mem) ) deallocate(tend%mem)
-    allocate(tend%mem(nx, nz,NVARS))
-    tend%dens => tend%mem(:,:,I_DENS)
-    tend%umom => tend%mem(:,:,I_UMOM)
-    tend%wmom => tend%mem(:,:,I_WMOM)
-    tend%rhot => tend%mem(:,:,I_RHOT)
-  end subroutine new_tendency
-
-  subroutine set_tendency(tend, xval)
-    implicit none
-    class(atmospheric_tendency), intent(inout) :: tend
-    real(wp), intent(in) :: xval
-    if ( .not. associated(tend%mem) ) then
-      write(stderr,*) 'NOT ALLOCATED FLUX ERROR AT LINE ', __LINE__
-      stop
-    end if
-    tend%mem(:,:,:) = xval
-  end subroutine set_tendency
-
-  subroutine del_tendency(tend)
-    implicit none
-    class(atmospheric_tendency), intent(inout) :: tend
-    if ( associated(tend%mem) ) deallocate(tend%mem)
-    nullify(tend%dens)
-    nullify(tend%umom)
-    nullify(tend%wmom)
-    nullify(tend%rhot)
-  end subroutine del_tendency
-
-  subroutine state_equal_to_state(x,y)
-    implicit none
-    type(atmospheric_state), intent(inout) :: x
-    type(atmospheric_state), intent(in) :: y
-    x%mem(:,:,:) = y%mem(:,:,:)
-  end subroutine state_equal_to_state
 
 end module module_types

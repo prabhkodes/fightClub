@@ -9,6 +9,7 @@ module module_physics
   use iodir
   use module_types
   use parallel_timer
+  use mpi
 
   implicit none
 
@@ -39,6 +40,7 @@ module module_physics
     real(wp) :: x, z, r, u, w, t, hr, ht
 
     call pll_timer%start("INIT")
+    call define_mpi_types(nz + 2*hs, nx_local + 2*hs)
 
     dx = xlen / nx
     dz = zlen / nz
@@ -53,22 +55,27 @@ module module_physics
     etime = 0.0_wp
     output_counter = 0.0_wp
 
-    write(stdout,*) 'INITIALIZING MODEL STATUS.'
-    write(stdout,*) 'nx         : ', nx
-    write(stdout,*) 'nz         : ', nz
-    write(stdout,*) 'dx         : ', dx
-    write(stdout,*) 'dz         : ', dz
-    write(stdout,*) 'dt         : ', dt
-    write(stdout,*) 'final time : ', sim_time
+
+    if (my_rank == 0) then
+        write(stdout,*) 'INITIALIZING MODEL STATUS.'
+        write(stdout,*) 'nx         : ', nx
+        write(stdout,*) 'nz         : ', nz
+        write(stdout,*) 'dx         : ', dx
+        write(stdout,*) 'dz         : ', dz
+        write(stdout,*) 'dt         : ', dt
+        write(stdout,*) 'final time : ', sim_time
+    end if
 
     call oldstat%set_state(0.0_wp)
 
     do k = 1-hs, nz+hs
-      do i = 1-hs, nx+hs
+      do i = 1-hs, nx_local+hs ! use local x
         do kk = 1, nqpoints
           do ii = 1, nqpoints
-            x = (i_beg-1 + i-0.5_wp) * dx + (qpoints(ii)-0.5_wp)*dx
-            z = (k_beg-1 + k-0.5_wp) * dz + (qpoints(kk)-0.5_wp)*dz
+
+            x = (i_beg_local-1 + i-0.5_wp) * dx + (qpoints(ii)-0.5_wp)*dx 
+            z = (k-0.5_wp) * dz + (qpoints(kk)-0.5_wp)*dz
+
             call thermal(x,z,r,u,w,t,hr,ht)
             oldstat%dens(i,k) = oldstat%dens(i,k) + &
                        r * qweights(ii)*qweights(kk)
@@ -87,14 +94,14 @@ module module_physics
     ref%denstheta(:) = 0.0_wp
     do k = 1-hs, nz+hs
       do kk = 1, nqpoints
-        z = (k_beg-1 + k-0.5_wp) * dz + (qpoints(kk)-0.5_wp)*dz
+        z = (k-0.5_wp) * dz + (qpoints(kk)-0.5_wp)*dz
         call thermal(0.0_wp,z,r,u,w,t,hr,ht)
         ref%density(k) = ref%density(k) + hr * qweights(kk)
         ref%denstheta(k) = ref%denstheta(k) + hr*ht * qweights(kk)
       end do
     end do
     do k = 1, nz+1
-      z = (k_beg-1 + k-1) * dz
+      z = (k-1.0_wp) * dz
       call thermal(0.0_wp,z,r,u,w,t,hr,ht)
       ref%idens(k) = hr
       ref%idenstheta(k) = hr*ht
@@ -155,12 +162,46 @@ module module_physics
     call pll_timer%start("Computation: step")
 
     if (dir == DIR_X) then
+      call exchange_all_variables(s1)
+      call MPI_WAITALL(16, reqs, stats, ierr)
       call tend%xtend(fl,ref,s1,dx,dt)
     else if (dir == DIR_Z) then
       call tend%ztend(fl,ref,s1,dz,dt)
     end if
     call s2%update(s0,tend,dt)
   end subroutine step
+
+  subroutine exchange_all_variables(s)
+    implicit none
+    type(atmospheric_state), intent(inout) :: s
+    
+    call fire_exchange(s%dens, 0)
+    call fire_exchange(s%umom, 4)
+    call fire_exchange(s%wmom, 8)
+    call fire_exchange(s%rhot, 12)
+  end subroutine exchange_all_variables
+
+  subroutine fire_exchange(field, offset)
+    implicit none
+    real(wp), intent(inout) :: field(1-hs:nx_local+hs, 1-hs:nz+hs)
+    integer, intent(in) :: offset
+    
+    ! 1. RECV from EAST (Right) -> Put into my EAST Halo
+    call MPI_IRECV(field(nx_local+1, 1-hs), 1, halo_type, &
+                   rank_east, 1, MPI_COMM_WORLD, reqs(offset+1), ierr)
+
+    ! 2. RECV from WEST (Left) -> Put into my WEST Halo
+    call MPI_IRECV(field(1-hs, 1-hs), 1, halo_type, &
+                   rank_west, 2, MPI_COMM_WORLD, reqs(offset+2), ierr)
+
+    ! 3. SEND to WEST (Left) -> From my WEST Boundary
+    call MPI_ISEND(field(1, 1-hs), 1, halo_type, &
+                   rank_west, 1, MPI_COMM_WORLD, reqs(offset+3), ierr)
+
+    ! 4. SEND to EAST (Right) -> From my EAST Boundary
+    call MPI_ISEND(field(nx_local-hs+1, 1-hs), 1, halo_type, &
+                   rank_east, 2, MPI_COMM_WORLD, reqs(offset+4), ierr)
+  end subroutine fire_exchange
 
   subroutine thermal(x,z,r,u,w,t,hr,ht)
     implicit none
@@ -214,6 +255,7 @@ module module_physics
 
   subroutine finalize()
     implicit none
+    call free_mpi_types()
     call oldstat%del_state( )
     call newstat%del_state( )
     call flux%del_flux( )
@@ -234,7 +276,7 @@ module module_physics
     mass = 0.0_wp
     te = 0.0_wp
     do k = 1, nz
-      do i = 1, nx
+      do i = 1, nx_local
         r = oldstat%dens(i,k) + ref%density(k)
         u = oldstat%umom(i,k) / r
         w = oldstat%wmom(i,k) / r
@@ -247,6 +289,9 @@ module module_physics
         te = te + (ke + r*cv*t)*dx*dz
       end do
     end do
+
+    call MPI_ALLREDUCE(MPI_IN_PLACE, mass, 1, MPI_DOUBLE_PRECISION, MPI_SUM, MPI_COMM_WORLD, ierr)
+    call MPI_ALLREDUCE(MPI_IN_PLACE, te,   1, MPI_DOUBLE_PRECISION, MPI_SUM, MPI_COMM_WORLD, ierr)
   end subroutine total_mass_energy
 
 end module module_physics

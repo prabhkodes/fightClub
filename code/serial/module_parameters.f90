@@ -78,11 +78,102 @@ module iodir
 end module iodir
 
 module parallel_parameters
+  use mpi
+  use iodir, only : stdout
   implicit none
-  public
-  integer, parameter :: i_beg = 1
-  integer, parameter :: k_beg = 1
-  integer, parameter :: hs = 2
+  
+  private
+
+  ! --- Public Interface ---
+  public :: parallel_setup
+  public :: define_mpi_types, free_mpi_types 
+  public :: my_rank, n_procs, ierr
+  public :: nx_local, i_beg_local, i_end_local
+  public :: rank_west, rank_east
+  public :: hs
+  public :: reqs, stats
+  public :: halo_type                        
+
+  ! --- MPI State Variables ---
+  integer :: my_rank               
+  integer :: n_procs               
+  integer :: ierr                  
+
+  ! --- Domain Geometry ---
+  integer, parameter :: hs = 2     
+  integer :: nx_local              
+  integer :: i_beg_local           
+  integer :: i_end_local           
+
+  ! --- Neighbor Ranks ---
+  integer :: rank_west             
+  integer :: rank_east             
+
+  ! --- Non-Blocking Communication Handles ---
+  ! CHANGED: 4 Requests per variable * 4 variables = 16 requests
+  integer :: reqs(16)                        
+  integer :: stats(MPI_STATUS_SIZE, 16)      
+  
+  integer :: halo_type                       
+
+  contains
+
+  subroutine parallel_setup(nx_global)
+    implicit none
+    integer, intent(in) :: nx_global
+    integer :: nx_base, rem
+
+    ! 1. Calculate Base Size and Remainder
+    nx_base = nx_global / n_procs
+    rem     = mod(nx_global, n_procs)
+
+    ! 2. Determine Local Size (nx_local)
+    if (my_rank < rem) then
+       nx_local = nx_base + 1
+    else
+       nx_local = nx_base
+    end if
+
+    ! 3. Determine Global Starting Index (i_beg_local)
+    i_beg_local = (my_rank * nx_base) + MIN(my_rank, rem) + 1
+    i_end_local = i_beg_local + nx_local - 1
+
+    ! 4. Determine Neighbors (Non-Periodic Boundaries)
+    rank_west = my_rank - 1
+    if (rank_west < 0) rank_west = MPI_PROC_NULL
+
+    rank_east = my_rank + 1
+    if (rank_east >= n_procs) rank_east = MPI_PROC_NULL
+
+    ! 5. Validation Log (Rank 0)
+    if (my_rank == 0) then
+       write(stdout,*) '--- PARALLEL SETUP ---'
+       write(stdout,*) 'Total Procs :', n_procs
+       write(stdout,*) 'Global NX   :', nx_global
+       write(stdout,*) 'Halo Size   :', hs
+       write(stdout,*) '----------------------'
+    end if
+  end subroutine parallel_setup
+
+  
+  subroutine define_mpi_types(nz_total, stride_x)
+    implicit none
+    integer, intent(in) :: nz_total, stride_x
+    
+    ! We want 'nz_total' blocks (vertical column height).
+    ! Each block is 'hs' elements wide (contiguous in memory).
+    ! The blocks are separated by 'stride_x' (the full width of the array, e.g. nx_local + 2*hs).
+    
+    call MPI_TYPE_VECTOR(nz_total, hs, stride_x, MPI_DOUBLE_PRECISION, halo_type, ierr)
+    call MPI_TYPE_COMMIT(halo_type, ierr)
+  end subroutine define_mpi_types
+
+  ! --- Cleanup ---
+  subroutine free_mpi_types()
+    implicit none
+    call MPI_TYPE_FREE(halo_type, ierr)
+  end subroutine free_mpi_types
+
 end module parallel_parameters
 
 module legendre_quadrature
@@ -106,7 +197,7 @@ module dimensions
   use indexing
   implicit none
   public
-  integer , parameter :: nx = 400
+  integer , parameter :: nx = 200
   integer , parameter :: nz = int(nx * zlen/xlen)
   real(wp), parameter :: sim_time = 1000.0_wp
   real(wp), parameter :: output_freq = 10.0_wp
