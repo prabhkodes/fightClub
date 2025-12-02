@@ -31,11 +31,11 @@ clean :
 test: model
 	@echo "Running model test..."
 	@OUTPUT=$$(./model); \
-	echo "$$OUTPUT"; \
+# 	echo "$$OUTPUT"; \
 	MASS=$$(echo "$$OUTPUT" | awk '/Fractional Delta Mass/{print $$NF}'); \
 	ENERGY=$$(echo "$$OUTPUT" | awk '/Fractional Delta Energy/{print $$NF}'); \
-	echo "Parsed Mass   = $$MASS"; \
-	echo "Parsed Energy = $$ENERGY"; \
+# 	echo "Parsed Mass   = $$MASS"; \
+# 	echo "Parsed Energy = $$ENERGY"; \
 	awk -v m="$$MASS" -v e="$$ENERGY" 'BEGIN { \
 	  mass = m + 0; energy = e + 0; \
 	  if (mass < 1e-13 && energy < 1e-3) { \
