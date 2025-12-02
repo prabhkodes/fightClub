@@ -146,7 +146,7 @@ module module_types
 
     hv_coef = -hv_beta * dx / (16.0_wp*dt)
 
-    #ifdef USE_OPENACC
+#ifdef USE_OPENACC
       !$acc data copyin(atmostat%mem, ref%density, ref%denstheta) &
       !$acc copyout(flux%dens, flux%umom, flux%wmom, flux%rhot)
       !$acc parallel loop collapse(2) private(stencil, vals, d3_vals, r, u, w, t, p, k, i, ll, s)
@@ -190,7 +190,7 @@ module module_types
       !$acc end parallel do
 
       !$acc end data
-    #else
+#else
       !$omp parallel do default(shared) &
       !$omp private(i, k, ll, s, stencil, vals, d3_vals, r, u, w, t, p)
       do k = 1, nz
@@ -231,7 +231,7 @@ module module_types
         end do
       end do
       !$omp end parallel do
-    #endif
+#endif
 
   end subroutine xtend
 
@@ -252,7 +252,7 @@ module module_types
 
     hv_coef = -hv_beta * dz / (16.0_wp*dt)
 
-    #ifdef USE_OPENACC
+#ifdef USE_OPENACC
       !$acc data copyin(atmostat%mem, ref%idens, ref%idenstheta, ref%pressure) &
       !$acc      copy(tendency%mem) copyout(flux%mem)
 
@@ -308,7 +308,7 @@ module module_types
       !$acc end parallel loop
       !$acc end data
 
-    #else
+#else
     !$omp parallel do default(shared) &
     !$omp private(i, k, ll, s, stencil, vals, d3_vals, r, u, w, t, p)
     do k = 1, nz+1
@@ -361,7 +361,7 @@ module module_types
       end do
     end do
     !$omp end parallel do
-  #endif
+#endif
 
   end subroutine ztend
 
