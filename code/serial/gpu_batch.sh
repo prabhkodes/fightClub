@@ -19,7 +19,7 @@ module load binutils/2.42
 
 echo "--- Building Model ---"
 make clean || exit 1
-make -j 4 || exit 1
+make -j 4 USE_OPENACC=1 || exit 1
 
 export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 export OMP_PLACES=cores
