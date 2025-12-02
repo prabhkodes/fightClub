@@ -33,11 +33,11 @@ nc2 = netCDF4.Dataset(sys.argv[2])
 nc3 = netCDF4.Dataset(sys.argv[3])
 
 # Print column headers
-print('#################')
-print("Var Name".ljust(20)+":  "+
-       "|1-2|".ljust(20)+"  ,  "+
-       "|2-3|".ljust(20)+"  ,  "+
-       "|2-3|/|1-2|")
+# print('#################')
+# print("Var Name".ljust(20)+":  "+
+#        "|1-2|".ljust(20)+"  ,  "+
+#        "|2-3|".ljust(20)+"  ,  "+
+#        "|2-3|/|1-2|")
 
 # Loop through all variables
 for v in nc1.variables.keys():
@@ -78,6 +78,8 @@ for v in nc1.variables.keys():
             # very large number so the user is informed
             else:
                 normRatio = 1e50
+                print("Significant difference on " + v)
+                exit(1)
 
     # Only print ratios that are > 2, meaning 2-3 diff is >2x more than
     # the 1-2 diff.
@@ -87,4 +89,5 @@ for v in nc1.variables.keys():
         print(v.ljust(20) + 
            ":  %20.10e  ,  %20.10e  ,  %20.10e"%(norm12,norm23,norm23/norm12))
 
-print('#################')
+# print('#################')
+print('TEST PASSED.')
