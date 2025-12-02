@@ -5,8 +5,8 @@
 #SBATCH --qos=boost_qos_dbg           # Cola de debug (máx ~30 min)
 #SBATCH --time=00:10:00               # 10 minutos para probar
 #SBATCH --nodes=1
-#SBATCH --ntasks-per-node=4           # 4 MPI ranks
-#SBATCH --cpus-per-task=8             # 8 hilos CPU por rank
+#SBATCH --ntasks-per-node=1           # 1 MPI rank
+#SBATCH --cpus-per-task=1             # 1 hilo CPU por rank
 #SBATCH --gres=gpu:1                  # 1 GPU
 #SBATCH --output=logs/%x_%j.out
 #SBATCH --error=logs/%x_%j.err
