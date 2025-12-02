@@ -42,6 +42,18 @@ program atmosphere_model
   call MPI_COMM_RANK(MPI_COMM_WORLD, my_rank, ierr)
   call MPI_COMM_SIZE(MPI_COMM_WORLD, num_procs, ierr)
 
+#ifdef USE_OPENACC
+  ! Assign each MPI rank to a different GPU (round-robin)
+  block
+    integer :: num_gpus, my_gpu
+    num_gpus = acc_get_num_devices(acc_device_nvidia)
+    if (num_gpus > 0) then
+      my_gpu = mod(my_rank, num_gpus)
+      call acc_set_device_num(my_gpu, acc_device_nvidia)
+    end if
+  end block
+#endif
+
   if (my_rank == 0) then
     write(stdout,*) "================= Execution Info =================="
     write(stdout,'(a,i4)') "  Number of MPI tasks: ", num_procs
@@ -59,6 +71,12 @@ program atmosphere_model
 #endif
     write(stdout,*) "==================================================="
   end if
+
+#ifdef USE_OPENACC
+  ! Print GPU assignment for each MPI rank
+  write(stdout,'(a,i4,a,i2)') "  MPI Rank ", my_rank, " -> GPU ", acc_get_device_num(acc_device_nvidia)
+  call MPI_BARRIER(MPI_COMM_WORLD, ierr)
+#endif
 
   nx_cli = default_nx
   sim_time_cli = default_sim_time
