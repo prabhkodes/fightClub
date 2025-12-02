@@ -31,7 +31,7 @@ module module_types
   end type reference_state
 
   type atmospheric_state
-    real(wp), allocatable, target, dimension(:,:,:) :: mem
+    real(wp), pointer, dimension(:,:,:) :: mem => null( )
     real(wp), pointer, dimension(:,:) :: dens
     real(wp), pointer, dimension(:,:) :: umom
     real(wp), pointer, dimension(:,:) :: wmom
@@ -46,7 +46,7 @@ module module_types
   end type atmospheric_state
 
   type atmospheric_flux
-    real(wp), allocatable, target, dimension(:,:,:) :: mem
+    real(wp), pointer, dimension(:,:,:) :: mem => null( )
     real(wp), pointer, dimension(:,:) :: dens
     real(wp), pointer, dimension(:,:) :: umom
     real(wp), pointer, dimension(:,:) :: wmom
@@ -58,7 +58,7 @@ module module_types
   end type atmospheric_flux
 
   type atmospheric_tendency
-    real(wp), allocatable, target, dimension(:,:,:) :: mem
+    real(wp), pointer, dimension(:,:,:) :: mem => null( )
     real(wp), pointer, dimension(:,:) :: dens
     real(wp), pointer, dimension(:,:) :: umom
     real(wp), pointer, dimension(:,:) :: wmom
@@ -80,7 +80,7 @@ module module_types
   subroutine new_state(atmo)
     implicit none
     class(atmospheric_state), intent(inout) :: atmo
-    if ( allocated(atmo%mem) ) deallocate(atmo%mem)
+    if ( associated(atmo%mem) ) deallocate(atmo%mem)
     allocate(atmo%mem(1-hs:nx+hs, 1-hs:nz+hs, NVARS))
     atmo%dens(1-hs:,1-hs:) => atmo%mem(:,:,I_DENS)
     atmo%umom(1-hs:,1-hs:) => atmo%mem(:,:,I_UMOM)
@@ -92,7 +92,7 @@ module module_types
     implicit none
     class(atmospheric_state), intent(inout) :: atmo
     real(wp), intent(in) :: xval
-    if ( .not. allocated(atmo%mem) ) then
+    if ( .not. associated(atmo%mem) ) then
       write(stderr,*) 'NOT ALLOCATED STATE ERROR AT LINE ', __LINE__
       stop
     end if
@@ -102,7 +102,7 @@ module module_types
   subroutine del_state(atmo)
     implicit none
     class(atmospheric_state), intent(inout) :: atmo
-    if ( allocated(atmo%mem) ) deallocate(atmo%mem)
+    if ( associated(atmo%mem) ) deallocate(atmo%mem)
     nullify(atmo%dens)
     nullify(atmo%umom)
     nullify(atmo%wmom)
@@ -484,7 +484,7 @@ module module_types
   subroutine new_flux(flux)
     implicit none
     class(atmospheric_flux), intent(inout) :: flux
-    if ( allocated(flux%mem) ) deallocate(flux%mem)
+    if ( associated(flux%mem) ) deallocate(flux%mem)
     allocate(flux%mem(1:nx+1, 1:nz+1,NVARS))
     flux%dens => flux%mem(:,:,I_DENS)
     flux%umom => flux%mem(:,:,I_UMOM)
@@ -496,7 +496,7 @@ module module_types
     implicit none
     class(atmospheric_flux), intent(inout) :: flux
     real(wp), intent(in) :: xval
-    if ( .not. allocated(flux%mem) ) then
+    if ( .not. associated(flux%mem) ) then
       write(stderr,*) 'NOT ALLOCATED FLUX ERROR AT LINE ', __LINE__
       stop
     end if
@@ -506,7 +506,7 @@ module module_types
   subroutine del_flux(flux)
     implicit none
     class(atmospheric_flux), intent(inout) :: flux
-    if ( allocated(flux%mem) ) deallocate(flux%mem)
+    if ( associated(flux%mem) ) deallocate(flux%mem)
     nullify(flux%dens)
     nullify(flux%umom)
     nullify(flux%wmom)
@@ -516,7 +516,7 @@ module module_types
   subroutine new_tendency(tend)
     implicit none
     class(atmospheric_tendency), intent(inout) :: tend
-    if ( allocated(tend%mem) ) deallocate(tend%mem)
+    if ( associated(tend%mem) ) deallocate(tend%mem)
     allocate(tend%mem(nx, nz,NVARS))
     tend%dens => tend%mem(:,:,I_DENS)
     tend%umom => tend%mem(:,:,I_UMOM)
@@ -528,7 +528,7 @@ module module_types
     implicit none
     class(atmospheric_tendency), intent(inout) :: tend
     real(wp), intent(in) :: xval
-    if ( .not. allocated(tend%mem) ) then
+    if ( .not. associated(tend%mem) ) then
       write(stderr,*) 'NOT ALLOCATED FLUX ERROR AT LINE ', __LINE__
       stop
     end if
@@ -538,7 +538,7 @@ module module_types
   subroutine del_tendency(tend)
     implicit none
     class(atmospheric_tendency), intent(inout) :: tend
-    if ( allocated(tend%mem) ) deallocate(tend%mem)
+    if ( associated(tend%mem) ) deallocate(tend%mem)
     nullify(tend%dens)
     nullify(tend%umom)
     nullify(tend%wmom)
