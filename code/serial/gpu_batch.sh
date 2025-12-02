@@ -26,8 +26,8 @@ export OMP_PLACES=cores
 export OMP_PROC_BIND=close
 
 echo "--- Running Simulation ---"
-echo "Nodes = ${NODES}"
-echo "Tasks / Node = 1 (Pure OpenMP)"
+echo "Nodes = ${SLURM_NNODES}"
+echo "Tasks / Node = ${SLURM_NTASKS_PER_NODE}"
 echo "CPUs / Task = ${SLURM_CPUS_PER_TASK} (OMP Threads)"
 
 ./model
