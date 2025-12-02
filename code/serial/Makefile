@@ -20,7 +20,7 @@ LDFLAGS = -L`nc-config --libdir` `nf-config --flibs`
 
 all: model
 
-model : model.f90 module_parameters.o module_types.F90 module_physics.o \
+model : model.F90 module_parameters.o module_types.F90 module_physics.o \
 		module_output.o parallel_timer.o
 	$(FC) $(FCFLAGS) $< -o $@ *.o $(LDFLAGS)
 
