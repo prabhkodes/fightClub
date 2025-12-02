@@ -30,6 +30,6 @@ echo "Nodes = ${SLURM_NNODES}"
 echo "Tasks / Node = ${SLURM_NTASKS_PER_NODE}"
 echo "CPUs / Task = ${SLURM_CPUS_PER_TASK} (OMP Threads)"
 
-srun ./model
+srun ./model 112 1000 0
 
 echo "--- Ending Simulation ---"
