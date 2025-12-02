@@ -23,7 +23,7 @@ NODES=${SLURM_NNODES:-1}
 
 echo "--- Building Model ---"
 make clean || exit 1
-make -j 4 || exit 1
+make -j 4 USE_OPENACC=0 || exit 1
 
 
 echo "--- Running Simulation ---"
