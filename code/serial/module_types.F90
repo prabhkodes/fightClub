@@ -116,6 +116,7 @@ module module_types
     class(atmospheric_tendency), intent(in) :: tend
     real(wp), intent(in) :: dt
     integer :: ll, k, i
+    
     do ll = 1, NVARS
       do k = 1, nz
         do i = 1, nx
@@ -123,6 +124,7 @@ module module_types
         end do
       end do
     end do
+    
   end subroutine update
 
 
@@ -135,7 +137,7 @@ module module_types
     real(wp), intent(in) :: dx, dt
     integer :: i, k, ll, s
     real(wp) :: r, u, w, t, p, hv_coef
-    ! These arrays are temps. We will make them PRIVATE so each thread gets its own copy.
+
     real(wp), dimension(STEN_SIZE) :: stencil
     real(wp), dimension(NVARS) :: d3_vals, vals
 
@@ -143,9 +145,6 @@ module module_types
 
     hv_coef = -hv_beta * dx / (16.0_wp*dt)
 
-    ! Flux Calculation
-    ! We parallelize the outer loop (k).
-    ! CRITICAL: stencil, vals, and d3_vals must be PRIVATE.
     !$omp parallel do default(shared) &
     !$omp private(i, k, ll, s, stencil, vals, d3_vals, r, u, w, t, p)
     do k = 1, nz
@@ -176,8 +175,6 @@ module module_types
     end do
     !$omp end parallel do
 
-    ! 3. Tendency Update
-    ! We collapse ll and k to ensure enough work for threads 
     !$omp parallel do default(shared) private(i, k, ll) collapse(2)
     do ll = 1, NVARS
       do k = 1, nz
@@ -208,8 +205,6 @@ module module_types
 
     hv_coef = -hv_beta * dz / (16.0_wp*dt)
 
-    ! Vertical Flux Calculation
-    ! 'stencil', 'vals', 'd3_vals' are PRIVATE.
     !$omp parallel do default(shared) &
     !$omp private(i, k, ll, s, stencil, vals, d3_vals, r, u, w, t, p)
     do k = 1, nz+1
@@ -247,8 +242,6 @@ module module_types
     end do
     !$omp end parallel do
 
-    ! Tendency Update
-    ! We collapse ll and k. 
     !$omp parallel do default(shared) private(i, k, ll) collapse(2)
     do ll = 1, NVARS
       do k = 1, nz

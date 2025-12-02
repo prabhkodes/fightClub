@@ -106,7 +106,7 @@ module dimensions
   use indexing
   implicit none
   public
-  integer , parameter :: nx = 100
+  integer , parameter :: nx = 400
   integer , parameter :: nz = int(nx * zlen/xlen)
   real(wp), parameter :: sim_time = 1000.0_wp
   real(wp), parameter :: output_freq = 10.0_wp
