@@ -117,13 +117,25 @@ module module_types
     real(wp), intent(in) :: dt
     integer :: ll, k, i
     
-    do ll = 1, NVARS
-      do k = 1, nz
-        do i = 1, nx
-          s2%mem(i,k,ll) = s0%mem(i,k,ll) + dt * tend%mem(i,k,ll)
+    #ifdef USE_OPENACC
+      !$acc parallel loop collapse(3) copyin(s0%mem, tend%mem) copyout(s2%mem)
+      do ll = 1, NVARS
+        do k = 1, nz
+          do i = 1, nx
+            s2%mem(i,k,ll) = s0%mem(i,k,ll) + dt * tend%mem(i,k,ll)
+          end do
         end do
       end do
-    end do
+      !$acc end parallel loop
+    #else
+      do ll = 1, NVARS
+        do k = 1, nz
+          do i = 1, nx
+            s2%mem(i,k,ll) = s0%mem(i,k,ll) + dt * tend%mem(i,k,ll)
+          end do
+        end do
+      end do
+    #endif
     
   end subroutine update
 
@@ -147,7 +159,7 @@ module module_types
 
     #ifdef USE_OPENACC
       !$acc data copyin(atmostat%mem, ref%density, ref%denstheta) &
-      !$acc copyout(flux%dens, flux%umom, flux%wmom, flux%rhot)
+      !$acc      create(flux%mem) copy(tendency%mem)
       !$acc parallel loop collapse(2) private(stencil, vals, d3_vals, r, u, w, t, p)
       do k = 1, nz
         do i = 1, nx+1
@@ -169,10 +181,21 @@ module module_types
           w = vals(I_WMOM) / r
           t = ( vals(I_RHOT) + ref%denstheta(k) ) / r
           p = c0*(r*t)**cdocv
-          flux%dens(i,k) = r*u - hv_coef*d3_vals(I_DENS)
-          flux%umom(i,k) = r*u*u+p - hv_coef*d3_vals(I_UMOM)
-          flux%wmom(i,k) = r*u*w - hv_coef*d3_vals(I_WMOM)
-          flux%rhot(i,k) = r*u*t - hv_coef*d3_vals(I_RHOT)
+          flux%mem(i,k,I_DENS) = r*u - hv_coef*d3_vals(I_DENS)
+          flux%mem(i,k,I_UMOM) = r*u*u+p - hv_coef*d3_vals(I_UMOM)
+          flux%mem(i,k,I_WMOM) = r*u*w - hv_coef*d3_vals(I_WMOM)
+          flux%mem(i,k,I_RHOT) = r*u*t - hv_coef*d3_vals(I_RHOT)
+        end do
+      end do
+      !$acc end parallel loop
+
+      !$acc parallel loop collapse(3)
+      do ll = 1, NVARS
+        do k = 1, nz
+          do i = 1, nx
+            tendency%mem(i,k,ll) = &
+                -( flux%mem(i+1,k,ll) - flux%mem(i,k,ll) ) / dx
+          end do
         end do
       end do
       !$acc end parallel loop
@@ -207,18 +230,18 @@ module module_types
         end do
       end do
       !$omp end parallel do
-    #endif
 
-    !$omp parallel do default(shared) private(i, k, ll) collapse(2)
-    do ll = 1, NVARS
-      do k = 1, nz
-        do i = 1, nx
-          tendency%mem(i,k,ll) = &
-              -( flux%mem(i+1,k,ll) - flux%mem(i,k,ll) ) / dx
+      !$omp parallel do default(shared) private(i, k, ll) collapse(2)
+      do ll = 1, NVARS
+        do k = 1, nz
+          do i = 1, nx
+            tendency%mem(i,k,ll) = &
+                -( flux%mem(i+1,k,ll) - flux%mem(i,k,ll) ) / dx
+          end do
         end do
       end do
-    end do
-    !$omp end parallel do
+      !$omp end parallel do
+    #endif
 
   end subroutine xtend
 
@@ -241,7 +264,7 @@ module module_types
 
     #ifdef USE_OPENACC
       !$acc data copyin(atmostat%mem, ref%idens, ref%idenstheta, ref%pressure) &
-      !$acc      copy(tendency%mem) copyout(flux%mem)
+      !$acc      copy(tendency%mem) create(flux%mem)
 
       !$acc parallel loop collapse(2) private(stencil, vals, d3_vals, r, u, w, t, p)
       do k = 1, nz+1
