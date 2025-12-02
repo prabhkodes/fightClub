@@ -118,7 +118,7 @@ module module_types
     integer :: ll, k, i
     
     #ifdef USE_OPENACC
-      !$acc parallel loop collapse(3) copyin(s0%mem, tend%mem) copyout(s2%mem)
+      !$acc parallel loop collapse(3) present(s0%mem, tend%mem, s2%mem)
       do ll = 1, NVARS
         do k = 1, nz
           do i = 1, nx
@@ -158,9 +158,8 @@ module module_types
     hv_coef = -hv_beta * dx / (16.0_wp*dt)
 
     #ifdef USE_OPENACC
-      !$acc data copyin(atmostat%mem, ref%density, ref%denstheta) &
-      !$acc      create(flux%mem) copy(tendency%mem)
-      !$acc parallel loop collapse(2) private(stencil, vals, d3_vals, r, u, w, t, p)
+      !$acc parallel loop collapse(2) present(atmostat%mem, ref%density, ref%denstheta, flux%mem) &
+      !$acc   private(stencil, vals, d3_vals, r, u, w, t, p)
       do k = 1, nz
         do i = 1, nx+1
           do ll = 1, NVARS
@@ -189,7 +188,7 @@ module module_types
       end do
       !$acc end parallel loop
 
-      !$acc parallel loop collapse(3)
+      !$acc parallel loop collapse(3) present(tendency%mem, flux%mem)
       do ll = 1, NVARS
         do k = 1, nz
           do i = 1, nx
@@ -199,7 +198,6 @@ module module_types
         end do
       end do
       !$acc end parallel loop
-      !$acc end data
     #else
       !$omp parallel do default(shared) &
       !$omp private(i, k, ll, s, stencil, vals, d3_vals, r, u, w, t, p)
@@ -263,10 +261,8 @@ module module_types
     hv_coef = -hv_beta * dz / (16.0_wp*dt)
 
     #ifdef USE_OPENACC
-      !$acc data copyin(atmostat%mem, ref%idens, ref%idenstheta, ref%pressure) &
-      !$acc      copy(tendency%mem) create(flux%mem)
-
-      !$acc parallel loop collapse(2) private(stencil, vals, d3_vals, r, u, w, t, p)
+      !$acc parallel loop collapse(2) present(atmostat%mem, ref%idens, ref%idenstheta, ref%pressure, flux%mem) &
+      !$acc   private(stencil, vals, d3_vals, r, u, w, t, p)
       do k = 1, nz+1
         do i = 1, nx
           do ll = 1, NVARS
@@ -301,7 +297,7 @@ module module_types
       end do
       !$acc end parallel loop
 
-      !$acc parallel loop collapse(3)
+      !$acc parallel loop collapse(3) present(tendency%mem, flux%mem)
       do ll = 1, NVARS
         do k = 1, nz
           do i = 1, nx
@@ -312,14 +308,13 @@ module module_types
       end do
       !$acc end parallel loop
       
-      !$acc parallel loop collapse(2)
+      !$acc parallel loop collapse(2) present(tendency%mem, atmostat%mem)
       do k = 1, nz
         do i = 1, nx
           tendency%mem(i,k,I_WMOM) = tendency%mem(i,k,I_WMOM) - atmostat%mem(i,k,I_DENS)*grav
         end do
       end do
       !$acc end parallel loop
-      !$acc end data
 
     #else
     !$omp parallel do default(shared) &
@@ -383,14 +378,27 @@ module module_types
     implicit none
     class(atmospheric_state), intent(inout) :: s
     integer :: k, ll
-    do ll = 1, NVARS
-      do k = 1, nz
-        s%mem(-1,k,ll)   = s%mem(nx-1,k,ll)
-        s%mem(0,k,ll)    = s%mem(nx,k,ll)
-        s%mem(nx+1,k,ll) = s%mem(1,k,ll)
-        s%mem(nx+2,k,ll) = s%mem(2,k,ll)
+    #ifdef USE_OPENACC
+      !$acc parallel loop collapse(2) present(s%mem)
+      do ll = 1, NVARS
+        do k = 1, nz
+          s%mem(-1,k,ll)   = s%mem(nx-1,k,ll)
+          s%mem(0,k,ll)    = s%mem(nx,k,ll)
+          s%mem(nx+1,k,ll) = s%mem(1,k,ll)
+          s%mem(nx+2,k,ll) = s%mem(2,k,ll)
+        end do
       end do
-    end do
+      !$acc end parallel loop
+    #else
+      do ll = 1, NVARS
+        do k = 1, nz
+          s%mem(-1,k,ll)   = s%mem(nx-1,k,ll)
+          s%mem(0,k,ll)    = s%mem(nx,k,ll)
+          s%mem(nx+1,k,ll) = s%mem(1,k,ll)
+          s%mem(nx+2,k,ll) = s%mem(2,k,ll)
+        end do
+      end do
+    #endif
   end subroutine exchange_halo_x
 
   subroutine exchange_halo_z(s,ref)
@@ -398,30 +406,59 @@ module module_types
     class(atmospheric_state), intent(inout) :: s
     class(reference_state), intent(in) :: ref
     integer :: i, ll
-    do ll = 1, NVARS
-      do i = 1-hs,nx+hs
-        if (ll == I_WMOM) then
-          s%mem(i,-1,ll) = 0.0_wp
-          s%mem(i,0,ll) = 0.0_wp
-          s%mem(i,nz+1,ll) = 0.0_wp
-          s%mem(i,nz+2,ll) = 0.0_wp
-        else if (ll == I_UMOM) then
-          s%mem(i,-1,ll)   = s%mem(i,1,ll) /  &
-              ref%density(1) * ref%density(-1)
-          s%mem(i,0,ll)    = s%mem(i,1,ll) /  &
-              ref%density(1) * ref%density(0)
-          s%mem(i,nz+1,ll) = s%mem(i,nz,ll) / &
-              ref%density(nz) * ref%density(nz+1)
-          s%mem(i,nz+2,ll) = s%mem(i,nz,ll) / &
-              ref%density(nz) * ref%density(nz+2)
-        else
-          s%mem(i,-1,ll) = s%mem(i,1,ll)
-          s%mem(i,0,ll) = s%mem(i,1,ll)
-          s%mem(i,nz+1,ll) = s%mem(i,nz,ll)
-          s%mem(i,nz+2,ll) = s%mem(i,nz,ll)
-        end if
+    #ifdef USE_OPENACC
+      !$acc parallel loop collapse(2) present(s%mem, ref%density)
+      do ll = 1, NVARS
+        do i = 1-hs,nx+hs
+          if (ll == I_WMOM) then
+            s%mem(i,-1,ll) = 0.0_wp
+            s%mem(i,0,ll) = 0.0_wp
+            s%mem(i,nz+1,ll) = 0.0_wp
+            s%mem(i,nz+2,ll) = 0.0_wp
+          else if (ll == I_UMOM) then
+            s%mem(i,-1,ll)   = s%mem(i,1,ll) /  &
+                ref%density(1) * ref%density(-1)
+            s%mem(i,0,ll)    = s%mem(i,1,ll) /  &
+                ref%density(1) * ref%density(0)
+            s%mem(i,nz+1,ll) = s%mem(i,nz,ll) / &
+                ref%density(nz) * ref%density(nz+1)
+            s%mem(i,nz+2,ll) = s%mem(i,nz,ll) / &
+                ref%density(nz) * ref%density(nz+2)
+          else
+            s%mem(i,-1,ll) = s%mem(i,1,ll)
+            s%mem(i,0,ll) = s%mem(i,1,ll)
+            s%mem(i,nz+1,ll) = s%mem(i,nz,ll)
+            s%mem(i,nz+2,ll) = s%mem(i,nz,ll)
+          end if
+        end do
       end do
-    end do
+      !$acc end parallel loop
+    #else
+      do ll = 1, NVARS
+        do i = 1-hs,nx+hs
+          if (ll == I_WMOM) then
+            s%mem(i,-1,ll) = 0.0_wp
+            s%mem(i,0,ll) = 0.0_wp
+            s%mem(i,nz+1,ll) = 0.0_wp
+            s%mem(i,nz+2,ll) = 0.0_wp
+          else if (ll == I_UMOM) then
+            s%mem(i,-1,ll)   = s%mem(i,1,ll) /  &
+                ref%density(1) * ref%density(-1)
+            s%mem(i,0,ll)    = s%mem(i,1,ll) /  &
+                ref%density(1) * ref%density(0)
+            s%mem(i,nz+1,ll) = s%mem(i,nz,ll) / &
+                ref%density(nz) * ref%density(nz+1)
+            s%mem(i,nz+2,ll) = s%mem(i,nz,ll) / &
+                ref%density(nz) * ref%density(nz+2)
+          else
+            s%mem(i,-1,ll) = s%mem(i,1,ll)
+            s%mem(i,0,ll) = s%mem(i,1,ll)
+            s%mem(i,nz+1,ll) = s%mem(i,nz,ll)
+            s%mem(i,nz+2,ll) = s%mem(i,nz,ll)
+          end if
+        end do
+      end do
+    #endif
   end subroutine exchange_halo_z
 
   subroutine new_ref(ref)

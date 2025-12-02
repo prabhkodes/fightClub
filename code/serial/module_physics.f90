@@ -241,13 +241,13 @@ module module_physics
     te = 0.0_wp
     #ifdef USE_OPENACC
       !$acc parallel loop collapse(2) reduction(+:mass,te) &
-      !$acc   copyin(oldstat%mem, ref%density, ref%denstheta)
+      !$acc   present(oldstat%mem, ref%density, ref%denstheta)
       do k = 1, nz
         do i = 1, nx
-          r = oldstat%dens(i,k) + ref%density(k)
-          u = oldstat%umom(i,k) / r
-          w = oldstat%wmom(i,k) / r
-          th = (oldstat%rhot(i,k) + ref%denstheta(k) ) / r
+          r = oldstat%mem(i,k,I_DENS) + ref%density(k)
+          u = oldstat%mem(i,k,I_UMOM) / r
+          w = oldstat%mem(i,k,I_WMOM) / r
+          th = (oldstat%mem(i,k,I_RHOT) + ref%denstheta(k) ) / r
           p = c0*(r*th)**cdocv
           t = th / (p0/p)**rdocp
           ke = r*(u*u+w*w)
