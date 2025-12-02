@@ -9,6 +9,12 @@ program atmosphere_model
   use dimensions , only : default_nx, default_sim_time, default_output_freq
   use iodir, only : stdout
   use parallel_timer
+#ifdef USE_OPENACC
+  use openacc
+#endif
+#ifdef USE_OPENMP
+  use omp_lib
+#endif
   implicit none
 
   real(wp) :: etime
@@ -29,10 +35,30 @@ program atmosphere_model
   real(wp) :: output_freq_cli
   character(len=64) :: arg
   real(8) :: final_duration
+  integer :: num_procs
 
 
   call MPI_INIT(ierr)
   call MPI_COMM_RANK(MPI_COMM_WORLD, my_rank, ierr)
+  call MPI_COMM_SIZE(MPI_COMM_WORLD, num_procs, ierr)
+
+  if (my_rank == 0) then
+    write(stdout,*) "================= Execution Info =================="
+    write(stdout,'(a,i4)') "  Number of MPI tasks: ", num_procs
+#ifdef USE_OPENMP
+    write(stdout,'(a,i4)') "  Number of OpenMP threads: ", omp_get_max_threads()
+    write(stdout,*) "  OpenMP: ENABLED"
+#else
+    write(stdout,*) "  OpenMP: DISABLED"
+#endif
+#ifdef USE_OPENACC
+    write(stdout,'(a,i4)') "  Number of GPUs available: ", acc_get_num_devices(acc_device_nvidia)
+    write(stdout,*) "  OpenACC: ENABLED"
+#else
+    write(stdout,*) "  OpenACC: DISABLED"
+#endif
+    write(stdout,*) "==================================================="
+  end if
 
   nx_cli = default_nx
   sim_time_cli = default_sim_time
