@@ -38,31 +38,51 @@ program atmosphere_model
   sim_time_cli = default_sim_time
   output_freq_cli = default_output_freq
 
-  if (my_rank == 0) then
-    arg_count = command_argument_count()
+  arg_count = command_argument_count()
 
-    if (arg_count >= 1) then
-      call get_command_argument(1, arg)
-      read(arg, *, iostat=arg_status) nx_cli
-      if (arg_status /= 0) nx_cli = default_nx
-    end if
-
-    if (arg_count >= 2) then
-      call get_command_argument(2, arg)
-      read(arg, *, iostat=arg_status) sim_time_cli
-      if (arg_status /= 0) sim_time_cli = default_sim_time
-    end if
-
-    if (arg_count >= 3) then
-      call get_command_argument(3, arg)
-      read(arg, *, iostat=arg_status) output_freq_cli
-      if (arg_status /= 0) output_freq_cli = default_output_freq
-    end if
+  if (arg_count >= 1) then
+    call get_command_argument(1, arg)
+    read(arg, *, iostat=arg_status) nx_cli
+    if (arg_status /= 0) nx_cli = default_nx
   end if
 
-  call MPI_BCAST(nx_cli, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
-  call MPI_BCAST(sim_time_cli, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
-  call MPI_BCAST(output_freq_cli, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+  if (arg_count >= 2) then
+    call get_command_argument(2, arg)
+    read(arg, *, iostat=arg_status) sim_time_cli
+    if (arg_status /= 0) sim_time_cli = default_sim_time
+  end if
+
+  if (arg_count >= 3) then
+    call get_command_argument(3, arg)
+    read(arg, *, iostat=arg_status) output_freq_cli
+    if (arg_status /= 0) output_freq_cli = default_output_freq
+  end if
+
+  ! if (my_rank == 0) then
+  !   arg_count = command_argument_count()
+
+  !   if (arg_count >= 1) then
+  !     call get_command_argument(1, arg)
+  !     read(arg, *, iostat=arg_status) nx_cli
+  !     if (arg_status /= 0) nx_cli = default_nx
+  !   end if
+
+  !   if (arg_count >= 2) then
+  !     call get_command_argument(2, arg)
+  !     read(arg, *, iostat=arg_status) sim_time_cli
+  !     if (arg_status /= 0) sim_time_cli = default_sim_time
+  !   end if
+
+  !   if (arg_count >= 3) then
+  !     call get_command_argument(3, arg)
+  !     read(arg, *, iostat=arg_status) output_freq_cli
+  !     if (arg_status /= 0) output_freq_cli = default_output_freq
+  !   end if
+  ! end if
+
+  ! call MPI_BCAST(nx_cli, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+  ! call MPI_BCAST(sim_time_cli, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+  ! call MPI_BCAST(output_freq_cli, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
 
   call set_dimensions(nx_cli, sim_time_cli, output_freq_cli)
 
