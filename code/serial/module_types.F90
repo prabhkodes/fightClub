@@ -177,6 +177,18 @@ module module_types
         end do
       end do
       !$acc end parallel loop
+
+      !$acc parallel loop collapse(2) private(i, k, ll)
+      do ll = 1, NVARS
+        do k = 1, nz
+          do i = 1, nx
+            tendency%mem(i,k,ll) = &
+                -( flux%mem(i+1,k,ll) - flux%mem(i,k,ll) ) / dx
+          end do
+        end do
+      end do
+      !$acc end parallel do
+
       !$acc end data
     #else
       !$omp parallel do default(shared) &
@@ -208,18 +220,18 @@ module module_types
         end do
       end do
       !$omp end parallel do
-    #endif
 
-    !$omp parallel do default(shared) private(i, k, ll) collapse(2)
-    do ll = 1, NVARS
-      do k = 1, nz
-        do i = 1, nx
-          tendency%mem(i,k,ll) = &
-              -( flux%mem(i+1,k,ll) - flux%mem(i,k,ll) ) / dx
+      !$omp parallel do default(shared) private(i, k, ll) collapse(2)
+      do ll = 1, NVARS
+        do k = 1, nz
+          do i = 1, nx
+            tendency%mem(i,k,ll) = &
+                -( flux%mem(i+1,k,ll) - flux%mem(i,k,ll) ) / dx
+          end do
         end do
       end do
-    end do
-    !$omp end parallel do
+      !$omp end parallel do
+    #endif
 
   end subroutine xtend
 
@@ -278,22 +290,19 @@ module module_types
         end do
       end do
       !$acc end parallel loop
-
-      !$acc parallel loop collapse(3)
+      
+      !$acc parallel loop collapse(2) private(k, i, ll)
       do ll = 1, NVARS
         do k = 1, nz
           do i = 1, nx
             tendency%mem(i,k,ll) = &
                 -( flux%mem(i,k+1,ll) - flux%mem(i,k,ll) ) / dz
+            
+            ! Adding gravity source term
+            if (ll == I_WMOM) then
+              tendency%wmom(i,k) = tendency%wmom(i,k) - atmostat%dens(i,k)*grav
+            end if
           end do
-        end do
-      end do
-      !$acc end parallel loop
-      
-      !$acc parallel loop collapse(2)
-      do k = 1, nz
-        do i = 1, nx
-          tendency%mem(i,k,I_WMOM) = tendency%mem(i,k,I_WMOM) - atmostat%mem(i,k,I_DENS)*grav
         end do
       end do
       !$acc end parallel loop
