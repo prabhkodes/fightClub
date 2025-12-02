@@ -106,8 +106,25 @@ module dimensions
   use indexing
   implicit none
   public
-  integer , parameter :: nx = 100
-  integer , parameter :: nz = int(nx * zlen/xlen)
-  real(wp), parameter :: sim_time = 1000.0_wp
-  real(wp), parameter :: output_freq = 10.0_wp
+  integer, parameter :: default_nx = 100
+  real(wp), parameter :: default_sim_time = 1000.0_wp
+  real(wp), parameter :: default_output_freq = 10.0_wp
+
+  integer :: nx = default_nx
+  integer :: nz = int(default_nx * zlen/xlen)
+  real(wp) :: sim_time = default_sim_time
+  real(wp) :: output_freq = default_output_freq
+
+contains
+
+  subroutine set_dimensions(nx_in, sim_time_in, output_freq_in)
+    integer, intent(in) :: nx_in
+    real(wp), intent(in) :: sim_time_in
+    real(wp), intent(in) :: output_freq_in
+
+    nx = nx_in
+    sim_time = sim_time_in
+    output_freq = output_freq_in
+    nz = int(nx * zlen/xlen)
+  end subroutine set_dimensions
 end module dimensions
