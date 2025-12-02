@@ -1,2 +1,4 @@
-netCDF4
-numpy
+certifi==2025.11.12
+cftime==1.6.5
+netCDF4==1.7.3
+numpy==2.2.6

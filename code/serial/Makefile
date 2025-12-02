@@ -48,4 +48,4 @@ test: model
 	  } \
 	}'
 	@echo "Compare output with reference output file..."
-	python3 nccmp3.py output.nc output_serial.nc output_serial.nc
+	python3 nccmp3.py output-serial.nc output-serial-optimized.nc output.nc
