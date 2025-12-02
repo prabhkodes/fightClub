@@ -1,4 +1,5 @@
 module module_types
+  use mpi
   use calculation_types
   use physical_constants
   use physical_parameters
@@ -357,17 +358,69 @@ module module_types
 
 
   subroutine exchange_halo_x(s)
+    use mpi
     implicit none
     class(atmospheric_state), intent(inout) :: s
-    integer :: k, ll
-    do ll = 1, NVARS
-      do k = 1, nz
-        s%mem(-1,k,ll)   = s%mem(nx-1,k,ll)
-        s%mem(0,k,ll)    = s%mem(nx,k,ll)
-        s%mem(nx+1,k,ll) = s%mem(1,k,ll)
-        s%mem(nx+2,k,ll) = s%mem(2,k,ll)
+    integer :: k, ll, ierr
+    integer :: send_size
+    real(wp), allocatable :: send_left(:,:,:), send_right(:,:,:)
+    real(wp), allocatable :: recv_left(:,:,:), recv_right(:,:,:)
+    integer :: req(4), status(MPI_STATUS_SIZE, 4)
+
+    if (nprocs == 1) then
+      ! Serial case: local periodic boundary conditions
+      do ll = 1, NVARS
+        do k = 1, nz
+          s%mem(-1,k,ll)   = s%mem(nx-1,k,ll)
+          s%mem(0,k,ll)    = s%mem(nx,k,ll)
+          s%mem(nx+1,k,ll) = s%mem(1,k,ll)
+          s%mem(nx+2,k,ll) = s%mem(2,k,ll)
+        end do
       end do
-    end do
+    else
+      ! Parallel case: MPI communication
+      allocate(send_left(hs, nz, NVARS))
+      allocate(send_right(hs, nz, NVARS))
+      allocate(recv_left(hs, nz, NVARS))
+      allocate(recv_right(hs, nz, NVARS))
+
+      ! Prepare data to send
+      do ll = 1, NVARS
+        do k = 1, nz
+          send_left(1,k,ll) = s%mem(1,k,ll)
+          send_left(2,k,ll) = s%mem(2,k,ll)
+          send_right(1,k,ll) = s%mem(nx-1,k,ll)
+          send_right(2,k,ll) = s%mem(nx,k,ll)
+        end do
+      end do
+
+      send_size = hs * nz * NVARS
+
+      ! Non-blocking send/receive with neighbors
+      call MPI_Irecv(recv_left, send_size, MPI_DOUBLE_PRECISION, &
+                     left_rank, 1, MPI_COMM_WORLD, req(1), ierr)
+      call MPI_Irecv(recv_right, send_size, MPI_DOUBLE_PRECISION, &
+                     right_rank, 2, MPI_COMM_WORLD, req(2), ierr)
+      call MPI_Isend(send_right, send_size, MPI_DOUBLE_PRECISION, &
+                     right_rank, 1, MPI_COMM_WORLD, req(3), ierr)
+      call MPI_Isend(send_left, send_size, MPI_DOUBLE_PRECISION, &
+                     left_rank, 2, MPI_COMM_WORLD, req(4), ierr)
+
+      call MPI_Waitall(4, req, status, ierr)
+
+      ! Copy received data to halos
+      do ll = 1, NVARS
+        do k = 1, nz
+          s%mem(-1,k,ll) = recv_left(1,k,ll)
+          s%mem(0,k,ll) = recv_left(2,k,ll)
+          s%mem(nx+1,k,ll) = recv_right(1,k,ll)
+          s%mem(nx+2,k,ll) = recv_right(2,k,ll)
+        end do
+      end do
+
+      deallocate(send_left, send_right, recv_left, recv_right)
+    end if
+
   end subroutine exchange_halo_x
 
   subroutine exchange_halo_z(s,ref)
