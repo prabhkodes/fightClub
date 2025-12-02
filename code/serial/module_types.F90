@@ -149,7 +149,7 @@ module module_types
     #ifdef USE_OPENACC
       !$acc data copyin(atmostat%mem, ref%density, ref%denstheta) &
       !$acc copyout(flux%dens, flux%umom, flux%wmom, flux%rhot)
-      !$acc parallel loop collapse(2) private(stencil, vals, d3_vals, r, u, w, t, p)
+      !$acc parallel loop collapse(2) private(stencil, vals, d3_vals, r, u, w, t, p, k, i, ll, s)
       do k = 1, nz
         do i = 1, nx+1
           do ll = 1, NVARS
@@ -244,7 +244,7 @@ module module_types
       !$acc data copyin(atmostat%mem, ref%idens, ref%idenstheta, ref%pressure) &
       !$acc      copy(tendency%mem) copyout(flux%mem)
 
-      !$acc parallel loop collapse(2) private(stencil, vals, d3_vals, r, u, w, t, p)
+      !$acc parallel loop collapse(2) private(i, k, ll, s, stencil, vals, d3_vals, r, u, w, t, p)
       do k = 1, nz+1
         do i = 1, nx
           do ll = 1, NVARS
