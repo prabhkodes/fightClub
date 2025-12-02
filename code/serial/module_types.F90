@@ -145,35 +145,69 @@ module module_types
 
     hv_coef = -hv_beta * dx / (16.0_wp*dt)
 
-    !$omp parallel do default(shared) &
-    !$omp private(i, k, ll, s, stencil, vals, d3_vals, r, u, w, t, p)
-    do k = 1, nz
-      do i = 1, nx+1
-        do ll = 1, NVARS
-          do s = 1, STEN_SIZE
-            stencil(s) = atmostat%mem(i-hs-1+s,k,ll)
+    #ifdef USE_OPENACC
+      !$acc data copyin(atmostat%mem, ref%density, ref%denstheta) &
+      !$acc copyout(flux%dens, flux%umom, flux%wmom, flux%rhot)
+      !$acc parallel loop collapse(2) private(stencil, vals, d3_vals, r, u, w, t, p)
+      do k = 1, nz
+        do i = 1, nx+1
+          do ll = 1, NVARS
+            do s = 1, STEN_SIZE
+              stencil(s) = atmostat%mem(i-hs-1+s,k,ll)
+            end do
+            vals(ll) = - 1.0_wp * stencil(1)/12.0_wp &
+                        + 7.0_wp * stencil(2)/12.0_wp &
+                        + 7.0_wp * stencil(3)/12.0_wp &
+                        - 1.0_wp * stencil(4)/12.0_wp
+            d3_vals(ll) = - 1.0_wp * stencil(1) &
+                          + 3.0_wp * stencil(2) &
+                          - 3.0_wp * stencil(3) &
+                          + 1.0_wp * stencil(4)
           end do
-          vals(ll) = - 1.0_wp * stencil(1)/12.0_wp &
-                     + 7.0_wp * stencil(2)/12.0_wp &
-                     + 7.0_wp * stencil(3)/12.0_wp &
-                     - 1.0_wp * stencil(4)/12.0_wp
-          d3_vals(ll) = - 1.0_wp * stencil(1) &
-                        + 3.0_wp * stencil(2) &
-                        - 3.0_wp * stencil(3) &
-                        + 1.0_wp * stencil(4)
+          r = vals(I_DENS) + ref%density(k)
+          u = vals(I_UMOM) / r
+          w = vals(I_WMOM) / r
+          t = ( vals(I_RHOT) + ref%denstheta(k) ) / r
+          p = c0*(r*t)**cdocv
+          flux%dens(i,k) = r*u - hv_coef*d3_vals(I_DENS)
+          flux%umom(i,k) = r*u*u+p - hv_coef*d3_vals(I_UMOM)
+          flux%wmom(i,k) = r*u*w - hv_coef*d3_vals(I_WMOM)
+          flux%rhot(i,k) = r*u*t - hv_coef*d3_vals(I_RHOT)
         end do
-        r = vals(I_DENS) + ref%density(k)
-        u = vals(I_UMOM) / r
-        w = vals(I_WMOM) / r
-        t = ( vals(I_RHOT) + ref%denstheta(k) ) / r
-        p = c0*(r*t)**cdocv
-        flux%dens(i,k) = r*u - hv_coef*d3_vals(I_DENS)
-        flux%umom(i,k) = r*u*u+p - hv_coef*d3_vals(I_UMOM)
-        flux%wmom(i,k) = r*u*w - hv_coef*d3_vals(I_WMOM)
-        flux%rhot(i,k) = r*u*t - hv_coef*d3_vals(I_RHOT)
       end do
-    end do
-    !$omp end parallel do
+      !$acc end parallel loop
+      !$acc end data
+    #else
+      !$omp parallel do default(shared) &
+      !$omp private(i, k, ll, s, stencil, vals, d3_vals, r, u, w, t, p)
+      do k = 1, nz
+        do i = 1, nx+1
+          do ll = 1, NVARS
+            do s = 1, STEN_SIZE
+              stencil(s) = atmostat%mem(i-hs-1+s,k,ll)
+            end do
+            vals(ll) = - 1.0_wp * stencil(1)/12.0_wp &
+                        + 7.0_wp * stencil(2)/12.0_wp &
+                        + 7.0_wp * stencil(3)/12.0_wp &
+                        - 1.0_wp * stencil(4)/12.0_wp
+            d3_vals(ll) = - 1.0_wp * stencil(1) &
+                          + 3.0_wp * stencil(2) &
+                          - 3.0_wp * stencil(3) &
+                          + 1.0_wp * stencil(4)
+          end do
+          r = vals(I_DENS) + ref%density(k)
+          u = vals(I_UMOM) / r
+          w = vals(I_WMOM) / r
+          t = ( vals(I_RHOT) + ref%denstheta(k) ) / r
+          p = c0*(r*t)**cdocv
+          flux%dens(i,k) = r*u - hv_coef*d3_vals(I_DENS)
+          flux%umom(i,k) = r*u*u+p - hv_coef*d3_vals(I_UMOM)
+          flux%wmom(i,k) = r*u*w - hv_coef*d3_vals(I_WMOM)
+          flux%rhot(i,k) = r*u*t - hv_coef*d3_vals(I_RHOT)
+        end do
+      end do
+      !$omp end parallel do
+    #endif
 
     !$omp parallel do default(shared) private(i, k, ll) collapse(2)
     do ll = 1, NVARS
@@ -205,6 +239,66 @@ module module_types
 
     hv_coef = -hv_beta * dz / (16.0_wp*dt)
 
+    #ifdef USE_OPENACC
+      !$acc data copyin(atmostat%mem, ref%idens, ref%idenstheta, ref%pressure) &
+      !$acc      copy(tendency%mem) copyout(flux%mem)
+
+      !$acc parallel loop collapse(2) private(stencil, vals, d3_vals, r, u, w, t, p)
+      do k = 1, nz+1
+        do i = 1, nx
+          do ll = 1, NVARS
+            do s = 1, STEN_SIZE
+              stencil(s) = atmostat%mem(i,k-hs-1+s,ll)
+            end do
+            vals(ll) = - 1.0_wp * stencil(1)/12.0_wp &
+                      + 7.0_wp * stencil(2)/12.0_wp &
+                      + 7.0_wp * stencil(3)/12.0_wp &
+                      - 1.0_wp * stencil(4)/12.0_wp
+            d3_vals(ll) = - 1.0_wp * stencil(1) &
+                          + 3.0_wp * stencil(2) &
+                          - 3.0_wp * stencil(3) &
+                          + 1.0_wp * stencil(4)
+          end do
+          r = vals(I_DENS) + ref%idens(k)
+          u = vals(I_UMOM) / r
+          w = vals(I_WMOM) / r
+          t = ( vals(I_RHOT) + ref%idenstheta(k) ) / r
+          p = c0*(r*t)**cdocv - ref%pressure(k)
+          
+          if (k == 1 .or. k == nz+1) then
+            w = 0.0_wp
+            d3_vals(I_DENS) = 0.0_wp
+          end if
+          
+          flux%mem(i,k,I_DENS) = r*w - hv_coef*d3_vals(I_DENS)
+          flux%mem(i,k,I_UMOM) = r*w*u - hv_coef*d3_vals(I_UMOM)
+          flux%mem(i,k,I_WMOM) = r*w*w+p - hv_coef*d3_vals(I_WMOM)
+          flux%mem(i,k,I_RHOT) = r*w*t - hv_coef*d3_vals(I_RHOT)
+        end do
+      end do
+      !$acc end parallel loop
+
+      !$acc parallel loop collapse(3)
+      do ll = 1, NVARS
+        do k = 1, nz
+          do i = 1, nx
+            tendency%mem(i,k,ll) = &
+                -( flux%mem(i,k+1,ll) - flux%mem(i,k,ll) ) / dz
+          end do
+        end do
+      end do
+      !$acc end parallel loop
+      
+      !$acc parallel loop collapse(2)
+      do k = 1, nz
+        do i = 1, nx
+          tendency%mem(i,k,I_WMOM) = tendency%mem(i,k,I_WMOM) - atmostat%mem(i,k,I_DENS)*grav
+        end do
+      end do
+      !$acc end parallel loop
+      !$acc end data
+
+    #else
     !$omp parallel do default(shared) &
     !$omp private(i, k, ll, s, stencil, vals, d3_vals, r, u, w, t, p)
     do k = 1, nz+1
@@ -257,7 +351,8 @@ module module_types
       end do
     end do
     !$omp end parallel do
-    
+  #endif
+
   end subroutine ztend
 
 
