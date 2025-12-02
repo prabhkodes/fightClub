@@ -86,5 +86,11 @@ for v in nc1.variables.keys():
     if normRatio > 0:
         print(v.ljust(20) + 
            ":  %20.10e  ,  %20.10e  ,  %20.10e"%(norm12,norm23,norm23/norm12))
+        
+    if normRatio > 2:
+        print("Ratio of errors < 2")
+        print("There are significant changes in your output file relative to the reference file!")
+        exit(1)
 
 print('#################')
+print('TEST PASSED.')
