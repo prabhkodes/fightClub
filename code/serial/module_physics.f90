@@ -35,7 +35,7 @@ module module_physics
 
     type(CTimer) :: pll_timer 
     real(wp), intent(out) :: etime, output_counter, dt
-    integer :: i, k, ii, kk
+    integer :: i, k, ii, kk, my_rank, ierr
     real(wp) :: x, z, r, u, w, t, hr, ht
 
     call pll_timer%start("INIT")
@@ -53,13 +53,17 @@ module module_physics
     etime = 0.0_wp
     output_counter = 0.0_wp
 
-    write(stdout,*) 'INITIALIZING MODEL STATUS.'
-    write(stdout,*) 'nx         : ', nx
-    write(stdout,*) 'nz         : ', nz
-    write(stdout,*) 'dx         : ', dx
-    write(stdout,*) 'dz         : ', dz
-    write(stdout,*) 'dt         : ', dt
-    write(stdout,*) 'final time : ', sim_time
+    call MPI_COMM_RANK(MPI_COMM_WORLD, my_rank, ierr)
+
+    if (my_rank == 0) then
+      write(stdout,*) 'INITIALIZING MODEL STATUS.'
+      write(stdout,*) 'nx         : ', nx
+      write(stdout,*) 'nz         : ', nz
+      write(stdout,*) 'dx         : ', dx
+      write(stdout,*) 'dz         : ', dz
+      write(stdout,*) 'dt         : ', dt
+      write(stdout,*) 'final time : ', sim_time
+    end if
 
     call oldstat%set_state(0.0_wp)
 
@@ -100,7 +104,9 @@ module module_physics
       ref%idenstheta(k) = hr*ht
       ref%pressure(k) = c0*(hr*ht)**cdocv
     end do
-    write(stdout,*) 'MODEL STATUS INITIALIZED.'
+    if (my_rank == 0) then
+      write(stdout,*) 'MODEL STATUS INITIALIZED.'
+    end if
   end subroutine init
 
   subroutine rungekutta(s0,s1,fl,tend,dt)

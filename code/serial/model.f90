@@ -5,7 +5,8 @@ program atmosphere_model
   use module_physics, only : init, finalize
   use module_physics, only : rungekutta, total_mass_energy
   use module_output, only : create_output, write_record, close_output
-  use dimensions , only : sim_time, output_freq
+  use dimensions , only : sim_time, output_freq, set_dimensions
+  use dimensions , only : default_nx, default_sim_time, default_output_freq
   use iodir, only : stdout
   use parallel_timer
   implicit none
@@ -18,16 +19,46 @@ program atmosphere_model
   real(wp) :: mass1, te1
   integer(8) :: t1, t2, rate
 
-  ! --- NEW VARIABLES ---
   integer :: ierr
   integer :: my_rank
-  integer :: dt_values(8) 
+  integer :: dt_values(8)
+  integer :: arg_count
+  integer :: arg_status
+  integer :: nx_cli
+  real(wp) :: sim_time_cli
+  real(wp) :: output_freq_cli
+  character(len=64) :: arg
   real(8) :: final_duration
-  ! ---------------------
 
 
   call MPI_INIT(ierr)
   call MPI_COMM_RANK(MPI_COMM_WORLD, my_rank, ierr)
+
+  nx_cli = default_nx
+  sim_time_cli = default_sim_time
+  output_freq_cli = default_output_freq
+
+  arg_count = command_argument_count()
+
+  if (arg_count >= 1) then
+    call get_command_argument(1, arg)
+    read(arg, *, iostat=arg_status) nx_cli
+    if (arg_status /= 0) nx_cli = default_nx
+  end if
+
+  if (arg_count >= 2) then
+    call get_command_argument(2, arg)
+    read(arg, *, iostat=arg_status) sim_time_cli
+    if (arg_status /= 0) sim_time_cli = default_sim_time
+  end if
+
+  if (arg_count >= 3) then
+    call get_command_argument(3, arg)
+    read(arg, *, iostat=arg_status) output_freq_cli
+    if (arg_status /= 0) output_freq_cli = default_output_freq
+  end if
+
+  call set_dimensions(nx_cli, sim_time_cli, output_freq_cli)
 
   ! --- PRINT START TIME (Rank 0 Only) ---
   if (my_rank == 0) then
