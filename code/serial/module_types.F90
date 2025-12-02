@@ -116,6 +116,7 @@ module module_types
     class(atmospheric_tendency), intent(in) :: tend
     real(wp), intent(in) :: dt
     integer :: ll, k, i
+    
     do ll = 1, NVARS
       do k = 1, nz
         do i = 1, nx
@@ -123,7 +124,9 @@ module module_types
         end do
       end do
     end do
+    
   end subroutine update
+
 
   subroutine xtend(tendency,flux,ref,atmostat,dx,dt)
     implicit none
@@ -134,12 +137,16 @@ module module_types
     real(wp), intent(in) :: dx, dt
     integer :: i, k, ll, s
     real(wp) :: r, u, w, t, p, hv_coef
+
     real(wp), dimension(STEN_SIZE) :: stencil
     real(wp), dimension(NVARS) :: d3_vals, vals
 
     call atmostat%exchange_halo_x( )
 
     hv_coef = -hv_beta * dx / (16.0_wp*dt)
+
+    !$omp parallel do default(shared) &
+    !$omp private(i, k, ll, s, stencil, vals, d3_vals, r, u, w, t, p)
     do k = 1, nz
       do i = 1, nx+1
         do ll = 1, NVARS
@@ -166,6 +173,9 @@ module module_types
         flux%rhot(i,k) = r*u*t - hv_coef*d3_vals(I_RHOT)
       end do
     end do
+    !$omp end parallel do
+
+    !$omp parallel do default(shared) private(i, k, ll) collapse(2)
     do ll = 1, NVARS
       do k = 1, nz
         do i = 1, nx
@@ -174,7 +184,10 @@ module module_types
         end do
       end do
     end do
+    !$omp end parallel do
+
   end subroutine xtend
+
 
   subroutine ztend(tendency,flux,ref,atmostat,dz,dt)
     implicit none
@@ -191,6 +204,9 @@ module module_types
     call atmostat%exchange_halo_z(ref)
 
     hv_coef = -hv_beta * dz / (16.0_wp*dt)
+
+    !$omp parallel do default(shared) &
+    !$omp private(i, k, ll, s, stencil, vals, d3_vals, r, u, w, t, p)
     do k = 1, nz+1
       do i = 1, nx
         do ll = 1, NVARS
@@ -211,29 +227,39 @@ module module_types
         w = vals(I_WMOM) / r
         t = ( vals(I_RHOT) + ref%idenstheta(k) ) / r
         p = c0*(r*t)**cdocv - ref%pressure(k)
+        
+        ! This IF statement is thread-safe because it relies only on 'k'
         if (k == 1 .or. k == nz+1) then
           w = 0.0_wp
           d3_vals(I_DENS) = 0.0_wp
         end if
+        
         flux%dens(i,k) = r*w - hv_coef*d3_vals(I_DENS)
         flux%umom(i,k) = r*w*u - hv_coef*d3_vals(I_UMOM)
         flux%wmom(i,k) = r*w*w+p - hv_coef*d3_vals(I_WMOM)
         flux%rhot(i,k) = r*w*t - hv_coef*d3_vals(I_RHOT)
       end do
     end do
+    !$omp end parallel do
 
+    !$omp parallel do default(shared) private(i, k, ll) collapse(2)
     do ll = 1, NVARS
       do k = 1, nz
         do i = 1, nx
           tendency%mem(i,k,ll) = &
               -( flux%mem(i,k+1,ll) - flux%mem(i,k,ll) ) / dz
+          
+          ! Adding gravity source term
           if (ll == I_WMOM) then
             tendency%wmom(i,k) = tendency%wmom(i,k) - atmostat%dens(i,k)*grav
           end if
         end do
       end do
     end do
+    !$omp end parallel do
+    
   end subroutine ztend
+
 
   subroutine exchange_halo_x(s)
     implicit none
