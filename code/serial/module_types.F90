@@ -1,5 +1,8 @@
 module module_types
   use mpi
+#ifdef USE_OPENACC
+  use openacc
+#endif
   use calculation_types
   use physical_constants
   use physical_parameters
