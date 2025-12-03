@@ -1,5 +1,8 @@
 module module_physics
   use mpi
+#ifdef USE_OPENACC
+  use openacc
+#endif
   use calculation_types, only : wp
   use physical_constants
   use physical_parameters
@@ -244,26 +247,44 @@ module module_physics
 
     call pll_timer%start("Computation: total_mass_energy")
 
-#ifdef USE_OPENACC
-    !$acc update self(oldstat%mem)
-#endif
-
     local_mass = 0.0_wp
     local_te = 0.0_wp
-    do k = 1, nz
-      do i = 1, nx
-        r = oldstat%dens(i,k) + ref%density(k)
-        u = oldstat%umom(i,k) / r
-        w = oldstat%wmom(i,k) / r
-        th = (oldstat%rhot(i,k) + ref%denstheta(k) ) / r
-        p = c0*(r*th)**cdocv
-        t = th / (p0/p)**rdocp
-        ke = r*(u*u+w*w)
-        ie = r*cv*t
-        local_mass = local_mass + r * dx * dz
-        local_te = local_te + (ke + r*cv*t) * dx * dz
+#ifdef USE_OPENACC
+    if (acc_is_present(oldstat%mem)) then
+      !$acc parallel loop collapse(2) present(oldstat%mem, ref%density, ref%denstheta) reduction(+:local_mass, local_te)
+      do k = 1, nz
+        do i = 1, nx
+          r = oldstat%dens(i,k) + ref%density(k)
+          u = oldstat%umom(i,k) / r
+          w = oldstat%wmom(i,k) / r
+          th = (oldstat%rhot(i,k) + ref%denstheta(k) ) / r
+          p = c0*(r*th)**cdocv
+          t = th / (p0/p)**rdocp
+          ke = r*(u*u+w*w)
+          ie = r*cv*t
+          local_mass = local_mass + r * dx * dz
+          local_te = local_te + (ke + r*cv*t) * dx * dz
+        end do
       end do
-    end do
+    else
+#endif
+      do k = 1, nz
+        do i = 1, nx
+          r = oldstat%dens(i,k) + ref%density(k)
+          u = oldstat%umom(i,k) / r
+          w = oldstat%wmom(i,k) / r
+          th = (oldstat%rhot(i,k) + ref%denstheta(k) ) / r
+          p = c0*(r*th)**cdocv
+          t = th / (p0/p)**rdocp
+          ke = r*(u*u+w*w)
+          ie = r*cv*t
+          local_mass = local_mass + r * dx * dz
+          local_te = local_te + (ke + r*cv*t) * dx * dz
+        end do
+      end do
+#ifdef USE_OPENACC
+    end if
+#endif
 
     call mpi_timer%start("MPI: Communication")
     ! Reduce to global values across all MPI processes

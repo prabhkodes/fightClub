@@ -10,7 +10,7 @@ FCFLAGS_BASE = -I. `nf-config --fflags`
 ifeq ($(USE_OPENACC),1)
 	# NVHPC compiler flags with OpenACC
     FC = mpifort
-    FCFLAGS = -fast -acc -gpu=managed -Minfo=accel -Mpreprocess $(FCFLAGS_BASE) -DUSE_OPENACC
+    FCFLAGS = -fast -acc -gpu=cc80 -Minfo=accel -Mpreprocess $(FCFLAGS_BASE) -DUSE_OPENACC
     LDFLAGS = -L`nc-config --libdir` `nf-config --flibs`
 else
 	# GNU compiler flags (original)

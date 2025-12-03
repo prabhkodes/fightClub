@@ -1,5 +1,8 @@
 module module_types
   use mpi
+#ifdef USE_OPENACC
+  use openacc
+#endif
   use calculation_types
   use physical_constants
   use physical_parameters
@@ -387,12 +390,10 @@ module module_types
     integer :: req(4), status(MPI_STATUS_SIZE, 4)
 	type(CTimer) :: mpi_timer
 
-#ifdef USE_OPENACC
-    !$acc update self(s%mem(1:nx,1:nz,:))
-#endif
-
     if (nprocs == 1) then
       ! Serial case: local periodic boundary conditions
+#ifdef USE_OPENACC
+      !$acc parallel loop collapse(2) present(s%mem)
       do ll = 1, NVARS
         do k = 1, nz
           s%mem(-1,k,ll)   = s%mem(nx-1,k,ll)
@@ -401,8 +402,15 @@ module module_types
           s%mem(nx+2,k,ll) = s%mem(2,k,ll)
         end do
       end do
-#ifdef USE_OPENACC
-      !$acc update device(s%mem(-1:0,1:nz,:), s%mem(nx+1:nx+2,1:nz,:))
+#else
+      do ll = 1, NVARS
+        do k = 1, nz
+          s%mem(-1,k,ll)   = s%mem(nx-1,k,ll)
+          s%mem(0,k,ll)    = s%mem(nx,k,ll)
+          s%mem(nx+1,k,ll) = s%mem(1,k,ll)
+          s%mem(nx+2,k,ll) = s%mem(2,k,ll)
+        end do
+      end do
 #endif
     else
       ! Parallel case: MPI communication
@@ -410,6 +418,12 @@ module module_types
       allocate(send_right(hs, nz, NVARS))
       allocate(recv_left(hs, nz, NVARS))
       allocate(recv_right(hs, nz, NVARS))
+
+#ifdef USE_OPENACC
+      if (acc_is_present(s%mem)) then
+        !$acc update self(s%mem(1:hs,1:nz,:), s%mem(nx-hs+1:nx,1:nz,:))
+      end if
+#endif
 
       ! Prepare data to send
       do ll = 1, NVARS
@@ -420,7 +434,6 @@ module module_types
           send_right(2,k,ll) = s%mem(nx,k,ll)
         end do
       end do
-
       send_size = hs * nz * NVARS
 
 
@@ -453,7 +466,9 @@ module module_types
       deallocate(send_left, send_right, recv_left, recv_right)
 
 #ifdef USE_OPENACC
-      !$acc update device(s%mem(-1:0,1:nz,:), s%mem(nx+1:nx+2,1:nz,:))
+      if (acc_is_present(s%mem)) then
+        !$acc update device(s%mem(-1:0,1:nz,:), s%mem(nx+1:nx+2,1:nz,:))
+      end if
 #endif
     end if
 
@@ -466,12 +481,11 @@ module module_types
 	integer :: i, ll
 
 #ifdef USE_OPENACC
-	  !$acc update self(s%mem(1:nx,1:nz,:))
-	  !$acc parallel loop collapse(2) present(s%mem, ref%density)
-	  do ll = 1, NVARS
-		do i = 1-hs,nx+hs
-		  if (ll == I_WMOM) then
-			s%mem(i,-1,ll) = 0.0_wp
+		  !$acc parallel loop collapse(2) present(s%mem, ref%density)
+		  do ll = 1, NVARS
+			do i = 1-hs,nx+hs
+			  if (ll == I_WMOM) then
+				s%mem(i,-1,ll) = 0.0_wp
 			s%mem(i,0,ll) = 0.0_wp
 			s%mem(i,nz+1,ll) = 0.0_wp
 			s%mem(i,nz+2,ll) = 0.0_wp
@@ -488,17 +502,16 @@ module module_types
 			s%mem(i,-1,ll) = s%mem(i,1,ll)
 			s%mem(i,0,ll) = s%mem(i,1,ll)
 			s%mem(i,nz+1,ll) = s%mem(i,nz,ll)
-			s%mem(i,nz+2,ll) = s%mem(i,nz,ll)
-		  end if
-		end do
-	  end do
-	  !$acc end parallel loop
-	  !$acc update device(s%mem(1-hs:nx+hs,-1:0,:), s%mem(1-hs:nx+hs,nz+1:nz+2,:))
+				s%mem(i,nz+2,ll) = s%mem(i,nz,ll)
+			  end if
+			end do
+		  end do
+		  !$acc end parallel loop
 #else
-	  do ll = 1, NVARS
-		do i = 1-hs,nx+hs
-		  if (ll == I_WMOM) then
-			s%mem(i,-1,ll) = 0.0_wp
+		  do ll = 1, NVARS
+			do i = 1-hs,nx+hs
+			  if (ll == I_WMOM) then
+				s%mem(i,-1,ll) = 0.0_wp
 			s%mem(i,0,ll) = 0.0_wp
 			s%mem(i,nz+1,ll) = 0.0_wp
 			s%mem(i,nz+2,ll) = 0.0_wp
