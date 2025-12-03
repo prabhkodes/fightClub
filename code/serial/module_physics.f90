@@ -35,7 +35,7 @@ module module_physics
 
     type(CTimer) :: pll_timer 
     real(wp), intent(out) :: etime, output_counter, dt
-    integer :: i, k, ii, kk
+    integer :: i, k, ii, kk, my_rank, ierr
     real(wp) :: x, z, r, u, w, t, hr, ht
 
     call pll_timer%start("INIT")
@@ -53,13 +53,17 @@ module module_physics
     etime = 0.0_wp
     output_counter = 0.0_wp
 
-    write(stdout,*) 'INITIALIZING MODEL STATUS.'
-    write(stdout,*) 'nx         : ', nx
-    write(stdout,*) 'nz         : ', nz
-    write(stdout,*) 'dx         : ', dx
-    write(stdout,*) 'dz         : ', dz
-    write(stdout,*) 'dt         : ', dt
-    write(stdout,*) 'final time : ', sim_time
+    call MPI_COMM_RANK(MPI_COMM_WORLD, my_rank, ierr)
+
+    if (my_rank == 0) then
+      write(stdout,*) 'INITIALIZING MODEL STATUS.'
+      write(stdout,*) 'nx         : ', nx
+      write(stdout,*) 'nz         : ', nz
+      write(stdout,*) 'dx         : ', dx
+      write(stdout,*) 'dz         : ', dz
+      write(stdout,*) 'dt         : ', dt
+      write(stdout,*) 'final time : ', sim_time
+    end if
 
     call oldstat%set_state(0.0_wp)
 
@@ -100,7 +104,9 @@ module module_physics
       ref%idenstheta(k) = hr*ht
       ref%pressure(k) = c0*(hr*ht)**cdocv
     end do
-    write(stdout,*) 'MODEL STATUS INITIALIZED.'
+    if (my_rank == 0) then
+      write(stdout,*) 'MODEL STATUS INITIALIZED.'
+    end if
   end subroutine init
 
   subroutine rungekutta(s0,s1,fl,tend,dt)
@@ -233,20 +239,40 @@ module module_physics
 
     mass = 0.0_wp
     te = 0.0_wp
-    do k = 1, nz
-      do i = 1, nx
-        r = oldstat%dens(i,k) + ref%density(k)
-        u = oldstat%umom(i,k) / r
-        w = oldstat%wmom(i,k) / r
-        th = (oldstat%rhot(i,k) + ref%denstheta(k) ) / r
-        p = c0*(r*th)**cdocv
-        t = th / (p0/p)**rdocp
-        ke = r*(u*u+w*w)
-        ie = r*cv*t
-        mass = mass + r *dx*dz
-        te = te + (ke + r*cv*t)*dx*dz
+#ifdef USE_OPENACC
+      !$acc parallel loop collapse(2) reduction(+:mass,te) &
+      !$acc   present(oldstat%mem, ref%density, ref%denstheta)
+      do k = 1, nz
+        do i = 1, nx
+          r = oldstat%mem(i,k,I_DENS) + ref%density(k)
+          u = oldstat%mem(i,k,I_UMOM) / r
+          w = oldstat%mem(i,k,I_WMOM) / r
+          th = (oldstat%mem(i,k,I_RHOT) + ref%denstheta(k) ) / r
+          p = c0*(r*th)**cdocv
+          t = th / (p0/p)**rdocp
+          ke = r*(u*u+w*w)
+          ie = r*cv*t
+          mass = mass + r *dx*dz
+          te = te + (ke + r*cv*t)*dx*dz
+        end do
       end do
-    end do
+      !$acc end parallel loop
+#else
+      do k = 1, nz
+        do i = 1, nx
+          r = oldstat%dens(i,k) + ref%density(k)
+          u = oldstat%umom(i,k) / r
+          w = oldstat%wmom(i,k) / r
+          th = (oldstat%rhot(i,k) + ref%denstheta(k) ) / r
+          p = c0*(r*th)**cdocv
+          t = th / (p0/p)**rdocp
+          ke = r*(u*u+w*w)
+          ie = r*cv*t
+          mass = mass + r *dx*dz
+          te = te + (ke + r*cv*t)*dx*dz
+        end do
+      end do
+#endif
   end subroutine total_mass_energy
 
 end module module_physics
