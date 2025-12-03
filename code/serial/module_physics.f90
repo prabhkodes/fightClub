@@ -1,4 +1,5 @@
 module module_physics
+  use mpi
   use calculation_types, only : wp
   use physical_constants
   use physical_parameters
@@ -35,12 +36,14 @@ module module_physics
 
     type(CTimer) :: pll_timer 
     real(wp), intent(out) :: etime, output_counter, dt
-    integer :: i, k, ii, kk, my_rank, ierr
+    integer :: i, k, ii, kk, ierr
     real(wp) :: x, z, r, u, w, t, hr, ht
+    integer :: i_global
 
     call pll_timer%start("INIT")
 
-    dx = xlen / nx
+    ! Use global nx for dx calculation to maintain consistent grid spacing
+    dx = xlen / nx_global
     dz = zlen / nz
 
     call oldstat%new_state( )
@@ -53,11 +56,10 @@ module module_physics
     etime = 0.0_wp
     output_counter = 0.0_wp
 
-    call MPI_COMM_RANK(MPI_COMM_WORLD, my_rank, ierr)
-
-    if (my_rank == 0) then
+    if (myrank == 0) then
       write(stdout,*) 'INITIALIZING MODEL STATUS.'
-      write(stdout,*) 'nx         : ', nx
+      write(stdout,*) 'nx_global  : ', nx_global
+      write(stdout,*) 'nx_local   : ', nx
       write(stdout,*) 'nz         : ', nz
       write(stdout,*) 'dx         : ', dx
       write(stdout,*) 'dz         : ', dz
@@ -69,9 +71,12 @@ module module_physics
 
     do k = 1-hs, nz+hs
       do i = 1-hs, nx+hs
+        ! Convert local index to global index
+        i_global = i_start_global + i - 1
         do kk = 1, nqpoints
           do ii = 1, nqpoints
-            x = (i_beg-1 + i-0.5_wp) * dx + (qpoints(ii)-0.5_wp)*dx
+            ! Use global index for x coordinate calculation
+            x = (i_global - 0.5_wp) * dx + (qpoints(ii)-0.5_wp)*dx
             z = (k_beg-1 + k-0.5_wp) * dz + (qpoints(kk)-0.5_wp)*dz
             call thermal(x,z,r,u,w,t,hr,ht)
             oldstat%dens(i,k) = oldstat%dens(i,k) + &
@@ -104,7 +109,7 @@ module module_physics
       ref%idenstheta(k) = hr*ht
       ref%pressure(k) = c0*(hr*ht)**cdocv
     end do
-    if (my_rank == 0) then
+    if (myrank == 0) then
       write(stdout,*) 'MODEL STATUS INITIALIZED.'
     end if
   end subroutine init
@@ -232,47 +237,33 @@ module module_physics
     
     type(CTimer) :: pll_timer 
     real(wp), intent(out) :: mass, te
-    integer :: i, k
+    integer :: i, k, ierr
     real(wp) :: r, u, w, th, p, t, ke, ie
+    real(wp) :: local_mass, local_te
 
     call pll_timer%start("Computation: total_mass_energy")
 
-    mass = 0.0_wp
-    te = 0.0_wp
-#ifdef USE_OPENACC
-      !$acc parallel loop collapse(2) reduction(+:mass,te) &
-      !$acc   present(oldstat%mem, ref%density, ref%denstheta)
-      do k = 1, nz
-        do i = 1, nx
-          r = oldstat%mem(i,k,I_DENS) + ref%density(k)
-          u = oldstat%mem(i,k,I_UMOM) / r
-          w = oldstat%mem(i,k,I_WMOM) / r
-          th = (oldstat%mem(i,k,I_RHOT) + ref%denstheta(k) ) / r
-          p = c0*(r*th)**cdocv
-          t = th / (p0/p)**rdocp
-          ke = r*(u*u+w*w)
-          ie = r*cv*t
-          mass = mass + r *dx*dz
-          te = te + (ke + r*cv*t)*dx*dz
-        end do
+    local_mass = 0.0_wp
+    local_te = 0.0_wp
+    do k = 1, nz
+      do i = 1, nx
+        r = oldstat%dens(i,k) + ref%density(k)
+        u = oldstat%umom(i,k) / r
+        w = oldstat%wmom(i,k) / r
+        th = (oldstat%rhot(i,k) + ref%denstheta(k) ) / r
+        p = c0*(r*th)**cdocv
+        t = th / (p0/p)**rdocp
+        ke = r*(u*u+w*w)
+        ie = r*cv*t
+        local_mass = local_mass + r * dx * dz
+        local_te = local_te + (ke + r*cv*t) * dx * dz
       end do
-      !$acc end parallel loop
-#else
-      do k = 1, nz
-        do i = 1, nx
-          r = oldstat%dens(i,k) + ref%density(k)
-          u = oldstat%umom(i,k) / r
-          w = oldstat%wmom(i,k) / r
-          th = (oldstat%rhot(i,k) + ref%denstheta(k) ) / r
-          p = c0*(r*th)**cdocv
-          t = th / (p0/p)**rdocp
-          ke = r*(u*u+w*w)
-          ie = r*cv*t
-          mass = mass + r *dx*dz
-          te = te + (ke + r*cv*t)*dx*dz
-        end do
-      end do
-#endif
+    end do
+
+    ! Reduce to global values across all MPI processes
+    call MPI_Allreduce(local_mass, mass, 1, MPI_DOUBLE_PRECISION, MPI_SUM, MPI_COMM_WORLD, ierr)
+    call MPI_Allreduce(local_te, te, 1, MPI_DOUBLE_PRECISION, MPI_SUM, MPI_COMM_WORLD, ierr)
+
   end subroutine total_mass_energy
 
 end module module_physics

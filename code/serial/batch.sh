@@ -1,9 +1,10 @@
 #!/bin/bash
+
 #SBATCH -A ICT25_MHPC
 #SBATCH -p dcgp_usr_prod
 #SBATCH --nodes=1
-#SBATCH --ntasks-per-node=1             
-#SBATCH --cpus-per-task=112             
+#SBATCH --ntasks-per-node=2             
+#SBATCH --cpus-per-task=56             
 #SBATCH --time=00:05:00
 #SBATCH --job-name=openmp_only_node
 #SBATCH --output=logs/%x_%j.out
@@ -23,7 +24,7 @@ NODES=${SLURM_NNODES:-1}
 
 echo "--- Building Model ---"
 make clean || exit 1
-make -j 4 || exit 1
+make -j 4 USE_OPENACC=0 || exit 1
 
 
 echo "--- Running Simulation ---"
@@ -33,7 +34,7 @@ echo "CPUs / Task = ${SLURM_CPUS_PER_TASK} (OMP Threads)"
 
 # 3. Execution 
 
-./model
+mpirun -np 2 ./model
 
 #4. END ba ba ba
 

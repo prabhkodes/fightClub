@@ -7,6 +7,7 @@ program atmosphere_model
   use module_output, only : create_output, write_record, close_output
   use dimensions , only : sim_time, output_freq, set_dimensions
   use dimensions , only : default_nx, default_sim_time, default_output_freq
+  use dimensions , only : setup_domain_decomposition, nx_global, nx, nprocs
   use iodir, only : stdout
   use parallel_timer
 #ifdef USE_OPENACC
@@ -103,6 +104,16 @@ program atmosphere_model
   end if
 
   call set_dimensions(nx_cli, sim_time_cli, output_freq_cli)
+
+  ! Setup MPI domain decomposition (divides nx among processes)
+  call setup_domain_decomposition(my_rank, num_procs)
+
+  if (my_rank == 0) then
+    write(stdout,*) "--------------- Domain Decomposition --------------"
+    write(stdout,'(a,i6)') "  Global nx: ", nx_global
+    write(stdout,'(a,i6)') "  Local nx per process: ~", nx_global/num_procs
+    write(stdout,*) "---------------------------------------------------"
+  end if
 
   ! --- PRINT START TIME (Rank 0 Only) ---
   if (my_rank == 0) then
