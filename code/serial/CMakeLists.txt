@@ -157,7 +157,8 @@ add_test(
        } \
      }'; \
     #  echo \"TEST: Compare output with reference output file...\"; \
-    #  TODO create virtual env and install packages OR use existing
+    #  IMPROVEMENT as of now we need to manually create virtual env. see `requirements.txt` for more details.
+    #  TODO create virtual env automatically, install packages and use it before running the test. will leave this for now.
     #  pyenv/bin/python3 ${CMAKE_CURRENT_SOURCE_DIR}/nccmp3.py output-serial.nc output-serial-optimized.nc output.nc"
 )
 
