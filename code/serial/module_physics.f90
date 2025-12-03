@@ -236,6 +236,7 @@ module module_physics
     implicit none
     
     type(CTimer) :: pll_timer 
+    type(CTimer) :: mpi_timer
     real(wp), intent(out) :: mass, te
     integer :: i, k, ierr
     real(wp) :: r, u, w, th, p, t, ke, ie
@@ -264,9 +265,11 @@ module module_physics
       end do
     end do
 
+    call mpi_timer%start("MPI: Communication")
     ! Reduce to global values across all MPI processes
     call MPI_Allreduce(local_mass, mass, 1, MPI_DOUBLE_PRECISION, MPI_SUM, MPI_COMM_WORLD, ierr)
     call MPI_Allreduce(local_te, te, 1, MPI_DOUBLE_PRECISION, MPI_SUM, MPI_COMM_WORLD, ierr)
+    call mpi_timer%stop()
 
   end subroutine total_mass_energy
 
