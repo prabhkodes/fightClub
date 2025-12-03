@@ -7,6 +7,7 @@ program atmosphere_model
   use module_output, only : create_output, write_record, close_output
   use dimensions , only : sim_time, output_freq, set_dimensions
   use dimensions , only : default_nx, default_sim_time, default_output_freq
+  use dimensions , only : setup_domain_decomposition, nx_global, nx, nprocs
   use iodir, only : stdout
   use parallel_timer
 #ifdef USE_OPENACC
@@ -104,6 +105,16 @@ program atmosphere_model
 
   call set_dimensions(nx_cli, sim_time_cli, output_freq_cli)
 
+  ! Setup MPI domain decomposition (divides nx among processes)
+  call setup_domain_decomposition(my_rank, num_procs)
+
+  if (my_rank == 0) then
+    write(stdout,*) "--------------- Domain Decomposition --------------"
+    write(stdout,'(a,i6)') "  Global nx: ", nx_global
+    write(stdout,'(a,i6)') "  Local nx per process: ~", nx_global/num_procs
+    write(stdout,*) "---------------------------------------------------"
+  end if
+
   ! --- PRINT START TIME (Rank 0 Only) ---
   if (my_rank == 0) then
       call date_and_time(values=dt_values)
@@ -115,11 +126,13 @@ program atmosphere_model
 
   call init(etime,output_counter,dt)
   call total_mass_energy(mass0,te0)
-  call create_output( )
-  call write_record(oldstat,ref,etime)
+
+  ! --- For benchmark, removing file i/o
+  ! call create_output( )
+  ! call write_record(oldstat,ref,etime)
 
 #ifdef USE_OPENACC
-  !$acc enter data copyin(oldstat, newstat, flux, tend, ref)
+  !$acc enter data create(oldstat, newstat, flux, tend, ref)
   !$acc enter data copyin(oldstat%mem, newstat%mem, flux%mem, tend%mem)
   !$acc enter data copyin(ref%density, ref%denstheta, ref%idens, ref%idenstheta, ref%pressure)
   !$acc enter data attach(oldstat%mem, newstat%mem, flux%mem, tend%mem)
@@ -151,13 +164,16 @@ program atmosphere_model
 #ifdef USE_OPENACC
       !$acc update self(oldstat%mem)
 #endif
-      call write_record(oldstat,ref,etime)
+        ! --- For benchmark, removing file i/o
+      ! call write_record(oldstat,ref,etime)
     end if
 
   end do
 
   call total_mass_energy(mass1,te1)
-  call close_output( )
+  
+  ! --- For benchmark, removing file i/o
+  ! call close_output( )
 
 #ifdef USE_OPENACC
   !$acc exit data delete(oldstat%mem, newstat%mem, flux%mem, tend%mem)

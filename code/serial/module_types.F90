@@ -1,4 +1,5 @@
 module module_types
+  use mpi
   use calculation_types
   use physical_constants
   use physical_parameters
@@ -7,6 +8,7 @@ module module_types
   use legendre_quadrature
   use dimensions
   use iodir
+  use parallel_timer
 
   implicit none
 
@@ -375,30 +377,86 @@ module module_types
 
 
   subroutine exchange_halo_x(s)
-	implicit none
-	class(atmospheric_state), intent(inout) :: s
-	integer :: k, ll
+    use mpi
+    implicit none
+    class(atmospheric_state), intent(inout) :: s
+    integer :: k, ll, ierr
+    integer :: send_size
+    real(wp), allocatable :: send_left(:,:,:), send_right(:,:,:)
+    real(wp), allocatable :: recv_left(:,:,:), recv_right(:,:,:)
+    integer :: req(4), status(MPI_STATUS_SIZE, 4)
+	type(CTimer) :: mpi_timer
+
 #ifdef USE_OPENACC
-	  !$acc parallel loop collapse(2) present(s%mem)
-	  do ll = 1, NVARS
-		do k = 1, nz
-		  s%mem(-1,k,ll)   = s%mem(nx-1,k,ll)
-		  s%mem(0,k,ll)    = s%mem(nx,k,ll)
-		  s%mem(nx+1,k,ll) = s%mem(1,k,ll)
-		  s%mem(nx+2,k,ll) = s%mem(2,k,ll)
-		end do
-	  end do
-	  !$acc end parallel loop
-#else
-	  do ll = 1, NVARS
-		do k = 1, nz
-		  s%mem(-1,k,ll)   = s%mem(nx-1,k,ll)
-		  s%mem(0,k,ll)    = s%mem(nx,k,ll)
-		  s%mem(nx+1,k,ll) = s%mem(1,k,ll)
-		  s%mem(nx+2,k,ll) = s%mem(2,k,ll)
-		end do
-	  end do
+    !$acc update self(s%mem(1:nx,1:nz,:))
 #endif
+
+    if (nprocs == 1) then
+      ! Serial case: local periodic boundary conditions
+      do ll = 1, NVARS
+        do k = 1, nz
+          s%mem(-1,k,ll)   = s%mem(nx-1,k,ll)
+          s%mem(0,k,ll)    = s%mem(nx,k,ll)
+          s%mem(nx+1,k,ll) = s%mem(1,k,ll)
+          s%mem(nx+2,k,ll) = s%mem(2,k,ll)
+        end do
+      end do
+#ifdef USE_OPENACC
+      !$acc update device(s%mem(-1:0,1:nz,:), s%mem(nx+1:nx+2,1:nz,:))
+#endif
+    else
+      ! Parallel case: MPI communication
+      allocate(send_left(hs, nz, NVARS))
+      allocate(send_right(hs, nz, NVARS))
+      allocate(recv_left(hs, nz, NVARS))
+      allocate(recv_right(hs, nz, NVARS))
+
+      ! Prepare data to send
+      do ll = 1, NVARS
+        do k = 1, nz
+          send_left(1,k,ll) = s%mem(1,k,ll)
+          send_left(2,k,ll) = s%mem(2,k,ll)
+          send_right(1,k,ll) = s%mem(nx-1,k,ll)
+          send_right(2,k,ll) = s%mem(nx,k,ll)
+        end do
+      end do
+
+      send_size = hs * nz * NVARS
+
+
+	call mpi_timer%start("MPI: Communication")
+
+      ! Non-blocking send/receive with neighbors
+      call MPI_Irecv(recv_left, send_size, MPI_DOUBLE_PRECISION, &
+                     left_rank, 1, MPI_COMM_WORLD, req(1), ierr)
+      call MPI_Irecv(recv_right, send_size, MPI_DOUBLE_PRECISION, &
+                     right_rank, 2, MPI_COMM_WORLD, req(2), ierr)
+      call MPI_Isend(send_right, send_size, MPI_DOUBLE_PRECISION, &
+                     right_rank, 1, MPI_COMM_WORLD, req(3), ierr)
+      call MPI_Isend(send_left, send_size, MPI_DOUBLE_PRECISION, &
+                     left_rank, 2, MPI_COMM_WORLD, req(4), ierr)
+
+      call MPI_Waitall(4, req, status, ierr)
+
+	call mpi_timer%stop()
+
+      ! Copy received data to halos
+      do ll = 1, NVARS
+        do k = 1, nz
+          s%mem(-1,k,ll) = recv_left(1,k,ll)
+          s%mem(0,k,ll) = recv_left(2,k,ll)
+          s%mem(nx+1,k,ll) = recv_right(1,k,ll)
+          s%mem(nx+2,k,ll) = recv_right(2,k,ll)
+        end do
+      end do
+
+      deallocate(send_left, send_right, recv_left, recv_right)
+
+#ifdef USE_OPENACC
+      !$acc update device(s%mem(-1:0,1:nz,:), s%mem(nx+1:nx+2,1:nz,:))
+#endif
+    end if
+
   end subroutine exchange_halo_x
 
   subroutine exchange_halo_z(s,ref)
@@ -406,7 +464,9 @@ module module_types
 	class(atmospheric_state), intent(inout) :: s
 	class(reference_state), intent(in) :: ref
 	integer :: i, ll
+
 #ifdef USE_OPENACC
+	  !$acc update self(s%mem(1:nx,1:nz,:))
 	  !$acc parallel loop collapse(2) present(s%mem, ref%density)
 	  do ll = 1, NVARS
 		do i = 1-hs,nx+hs
@@ -433,6 +493,7 @@ module module_types
 		end do
 	  end do
 	  !$acc end parallel loop
+	  !$acc update device(s%mem(1-hs:nx+hs,-1:0,:), s%mem(1-hs:nx+hs,nz+1:nz+2,:))
 #else
 	  do ll = 1, NVARS
 		do i = 1-hs,nx+hs

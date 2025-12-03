@@ -115,6 +115,16 @@ module dimensions
   real(wp) :: sim_time = default_sim_time
   real(wp) :: output_freq = default_output_freq
 
+  ! MPI domain decomposition variables
+  integer :: nprocs = 1           ! Total number of MPI processes
+  integer :: myrank = 0           ! Rank of this process
+  integer :: nx_local             ! Local nx for this process
+  integer :: nx_global            ! Global nx (original nx)
+  integer :: i_start_global       ! Global starting index for this process
+  integer :: i_end_global         ! Global ending index for this process
+  integer :: left_rank            ! Left neighbor MPI rank
+  integer :: right_rank           ! Right neighbor MPI rank
+
 contains
 
   subroutine set_dimensions(nx_in, sim_time_in, output_freq_in)
@@ -123,8 +133,42 @@ contains
     real(wp), intent(in) :: output_freq_in
 
     nx = nx_in
+    nx_global = nx_in
     sim_time = sim_time_in
     output_freq = output_freq_in
     nz = int(nx * zlen/xlen)
   end subroutine set_dimensions
+
+  subroutine setup_domain_decomposition(rank, num_procs)
+    implicit none
+    integer, intent(in) :: rank, num_procs
+    integer :: base_nx, remainder
+
+    myrank = rank
+    nprocs = num_procs
+    nx_global = nx
+
+    ! Divide nx among processes
+    base_nx = nx_global / nprocs
+    remainder = mod(nx_global, nprocs)
+
+    ! Distribute remainder among first processes
+    if (myrank < remainder) then
+      nx_local = base_nx + 1
+      i_start_global = myrank * (base_nx + 1) + 1
+    else
+      nx_local = base_nx
+      i_start_global = remainder * (base_nx + 1) + (myrank - remainder) * base_nx + 1
+    end if
+    i_end_global = i_start_global + nx_local - 1
+
+    ! Update nx to local value for this process
+    nx = nx_local
+
+    ! Neighbors (periodic in x)
+    left_rank = mod(myrank - 1 + nprocs, nprocs)
+    right_rank = mod(myrank + 1, nprocs)
+
+  end subroutine setup_domain_decomposition
+
 end module dimensions
