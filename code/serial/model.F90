@@ -130,7 +130,7 @@ program atmosphere_model
   call write_record(oldstat,ref,etime)
 
 #ifdef USE_OPENACC
-  !$acc enter data copyin(oldstat, newstat, flux, tend, ref)
+  !$acc enter data create(oldstat, newstat, flux, tend, ref)
   !$acc enter data copyin(oldstat%mem, newstat%mem, flux%mem, tend%mem)
   !$acc enter data copyin(ref%density, ref%denstheta, ref%idens, ref%idenstheta, ref%pressure)
   !$acc enter data attach(oldstat%mem, newstat%mem, flux%mem, tend%mem)

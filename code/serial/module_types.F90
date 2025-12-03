@@ -385,6 +385,10 @@ module module_types
     real(wp), allocatable :: recv_left(:,:,:), recv_right(:,:,:)
     integer :: req(4), status(MPI_STATUS_SIZE, 4)
 
+#ifdef USE_OPENACC
+    !$acc update self(s%mem(1:nx,1:nz,:))
+#endif
+
     if (nprocs == 1) then
       ! Serial case: local periodic boundary conditions
       do ll = 1, NVARS
@@ -395,6 +399,9 @@ module module_types
           s%mem(nx+2,k,ll) = s%mem(2,k,ll)
         end do
       end do
+#ifdef USE_OPENACC
+      !$acc update device(s%mem(-1:0,1:nz,:), s%mem(nx+1:nx+2,1:nz,:))
+#endif
     else
       ! Parallel case: MPI communication
       allocate(send_left(hs, nz, NVARS))
@@ -437,6 +444,10 @@ module module_types
       end do
 
       deallocate(send_left, send_right, recv_left, recv_right)
+
+#ifdef USE_OPENACC
+      !$acc update device(s%mem(-1:0,1:nz,:), s%mem(nx+1:nx+2,1:nz,:))
+#endif
     end if
 
   end subroutine exchange_halo_x
@@ -446,7 +457,9 @@ module module_types
 	class(atmospheric_state), intent(inout) :: s
 	class(reference_state), intent(in) :: ref
 	integer :: i, ll
+
 #ifdef USE_OPENACC
+	  !$acc update self(s%mem(1:nx,1:nz,:))
 	  !$acc parallel loop collapse(2) present(s%mem, ref%density)
 	  do ll = 1, NVARS
 		do i = 1-hs,nx+hs
@@ -473,6 +486,7 @@ module module_types
 		end do
 	  end do
 	  !$acc end parallel loop
+	  !$acc update device(s%mem(1-hs:nx+hs,-1:0,:), s%mem(1-hs:nx+hs,nz+1:nz+2,:))
 #else
 	  do ll = 1, NVARS
 		do i = 1-hs,nx+hs
