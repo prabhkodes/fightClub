@@ -87,7 +87,7 @@ if(USE_OPENACC)
     # Link flags: need -acc at link time, optionally gpu flags
     target_link_options(model PRIVATE
         -acc
-        -gpu=managed
+        -gpu=cc80
     )
 else()
     message(STATUS "Building with OpenMP-style flags")
