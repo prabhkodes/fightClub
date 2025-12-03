@@ -2,7 +2,8 @@ module module_output
   use mpi
   use calculation_types, only : wp, iowp
   use parallel_parameters, only : i_beg, k_beg
-  use dimensions, only : nx, nz, nx_global, nprocs, myrank, i_start_global
+  ! We need i_start_global and i_end_global to know where to paste data
+  use dimensions, only : nx, nz, nx_global, nprocs, myrank, i_start_global, i_end_global
   use module_types, only : atmospheric_state, reference_state
   use iodir, only : stderr
   use netcdf
@@ -15,12 +16,13 @@ module module_output
   public :: write_record
   public :: close_output
 
+  ! Local arrays for calculation
   real(wp), allocatable, dimension(:,:) :: dens
   real(wp), allocatable, dimension(:,:) :: uwnd
   real(wp), allocatable, dimension(:,:) :: wwnd
   real(wp), allocatable, dimension(:,:) :: theta
 
-  ! Global arrays for gathering data (only on rank 0)
+  ! Global arrays (Allocated ONLY on Rank 0)
   real(wp), allocatable, dimension(:,:) :: global_dens
   real(wp), allocatable, dimension(:,:) :: global_uwnd
   real(wp), allocatable, dimension(:,:) :: global_wwnd
@@ -102,6 +104,8 @@ module module_output
     integer, dimension(1) :: st1, ct1
     integer, dimension(3) :: st3, ct3
     real(wp), dimension(1) :: etimearr
+    real(wp), allocatable, dimension(:,:) :: temp_buf
+    integer :: status(MPI_STATUS_SIZE)
 
     ! Calculate local fields
     do k = 1, nz
@@ -148,11 +152,13 @@ module module_output
 
   subroutine close_output
     implicit none
-    if ( allocated(dens) ) then
-      deallocate(dens)
-      deallocate(uwnd)
-      deallocate(wwnd)
-      deallocate(theta)
+    ! Deallocate Local
+    if ( allocated(dens) ) deallocate(dens, uwnd, wwnd, theta)
+    
+    if (myrank == 0) then
+      ! Deallocate Global
+      if ( allocated(global_dens) ) deallocate(global_dens, global_uwnd, global_wwnd, global_theta)
+      call ncwrap(nf90_close(ncid), __LINE__)
     end if
     if ( allocated(recvcounts) ) then
       deallocate(recvcounts)
@@ -174,7 +180,7 @@ module module_output
     integer, intent(in) :: ierr
     integer, intent(in) :: line
     if (ierr /= nf90_noerr) then
-      write(stderr,*) 'NetCDF Error at line: ', line
+      write(stderr,*) 'NetCDF Error (Rank ', myrank, ') at line: ', line
       write(stderr,*) nf90_strerror(ierr)
       stop
     end if
