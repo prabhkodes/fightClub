@@ -1,5 +1,8 @@
 module module_output
   use mpi
+#ifdef USE_OPENACC
+  use openacc
+#endif
   use calculation_types, only : wp, iowp
   use parallel_parameters, only : i_beg, k_beg
   use dimensions, only : nx, nz, nx_global, nprocs, myrank, i_start_global
@@ -74,6 +77,12 @@ module module_output
     ! Temp variables for Rank 0 receiving
     integer :: r_nx, r_istart
     real(wp), allocatable, dimension(:,:) :: temp_buf
+
+#ifdef USE_OPENACC
+    if (acc_is_present(atmostat%mem)) then
+      !$acc update self(atmostat%mem(1:nx,1:nz,:))
+    end if
+#endif
 
     ! --- 1. Compute Local Fields ---
     do k = 1, nz
