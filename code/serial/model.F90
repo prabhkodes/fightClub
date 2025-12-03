@@ -9,6 +9,12 @@ program atmosphere_model
   use dimensions , only : default_nx, default_sim_time, default_output_freq
   use iodir, only : stdout
   use parallel_timer
+#ifdef USE_OPENACC
+  use openacc
+#endif
+#ifdef USE_OPENMP
+  use omp_lib
+#endif
   implicit none
 
   real(wp) :: etime
@@ -29,10 +35,48 @@ program atmosphere_model
   real(wp) :: output_freq_cli
   character(len=64) :: arg
   real(8) :: final_duration
+  integer :: num_procs
 
 
   call MPI_INIT(ierr)
   call MPI_COMM_RANK(MPI_COMM_WORLD, my_rank, ierr)
+  call MPI_COMM_SIZE(MPI_COMM_WORLD, num_procs, ierr)
+
+#ifdef USE_OPENACC
+  ! Assign each MPI rank to a different GPU (round-robin)
+  block
+    integer :: num_gpus, my_gpu
+    num_gpus = acc_get_num_devices(acc_device_nvidia)
+    if (num_gpus > 0) then
+      my_gpu = mod(my_rank, num_gpus)
+      call acc_set_device_num(my_gpu, acc_device_nvidia)
+    end if
+  end block
+#endif
+
+  if (my_rank == 0) then
+    write(stdout,*) "================= Execution Info =================="
+    write(stdout,'(a,i4)') "  Number of MPI tasks: ", num_procs
+#ifdef USE_OPENMP
+    write(stdout,'(a,i4)') "  Number of OpenMP threads: ", omp_get_max_threads()
+    write(stdout,*) "  OpenMP: ENABLED"
+#else
+    write(stdout,*) "  OpenMP: DISABLED"
+#endif
+#ifdef USE_OPENACC
+    write(stdout,'(a,i4)') "  Number of GPUs available: ", acc_get_num_devices(acc_device_nvidia)
+    write(stdout,*) "  OpenACC: ENABLED"
+#else
+    write(stdout,*) "  OpenACC: DISABLED"
+#endif
+    write(stdout,*) "==================================================="
+  end if
+
+#ifdef USE_OPENACC
+  ! Print GPU assignment for each MPI rank
+  write(stdout,'(a,i4,a,i2)') "  MPI Rank ", my_rank, " -> GPU ", acc_get_device_num(acc_device_nvidia)
+  call MPI_BARRIER(MPI_COMM_WORLD, ierr)
+#endif
 
   nx_cli = default_nx
   sim_time_cli = default_sim_time
@@ -74,6 +118,14 @@ program atmosphere_model
   call create_output( )
   call write_record(oldstat,ref,etime)
 
+#ifdef USE_OPENACC
+  !$acc enter data copyin(oldstat, newstat, flux, tend, ref)
+  !$acc enter data copyin(oldstat%mem, newstat%mem, flux%mem, tend%mem)
+  !$acc enter data copyin(ref%density, ref%denstheta, ref%idens, ref%idenstheta, ref%pressure)
+  !$acc enter data attach(oldstat%mem, newstat%mem, flux%mem, tend%mem)
+  !$acc enter data attach(ref%density, ref%denstheta, ref%idens, ref%idenstheta, ref%pressure)
+#endif
+
   ! Get initial tick count and the clock rate (ticks per second)
   call system_clock(t1, rate) 
 
@@ -96,6 +148,9 @@ program atmosphere_model
 
     if (output_counter >= output_freq) then
       output_counter = output_counter - output_freq
+#ifdef USE_OPENACC
+      !$acc update self(oldstat%mem)
+#endif
       call write_record(oldstat,ref,etime)
     end if
 
@@ -103,6 +158,12 @@ program atmosphere_model
 
   call total_mass_energy(mass1,te1)
   call close_output( )
+
+#ifdef USE_OPENACC
+  !$acc exit data delete(oldstat%mem, newstat%mem, flux%mem, tend%mem)
+  !$acc exit data delete(ref%density, ref%denstheta, ref%idens, ref%idenstheta, ref%pressure)
+  !$acc exit data delete(oldstat, newstat, flux, tend, ref)
+#endif
 
   if (my_rank == 0) then
       write(stdout,*) "----------------- Atmosphere check ----------------"
