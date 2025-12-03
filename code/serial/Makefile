@@ -11,12 +11,12 @@ ifeq ($(USE_OPENACC),1)
 	# NVHPC compiler flags with OpenACC
     FC = mpifort
     FCFLAGS = -fast -acc -gpu=managed -Minfo=accel -Mpreprocess $(FCFLAGS_BASE) -DUSE_OPENACC
+    LDFLAGS = -L`nc-config --libdir` `nf-config --flibs`
 else
 	# GNU compiler flags (original)
 	FCFLAGS = -Ofast $(FCFLAGS_BASE) -fPIC -fopenmp -DUSE_OPENMP -cpp
+    LDFLAGS = -L`nc-config --libdir` `nf-config --flibs` -lopen-pal
 endif
-
-LDFLAGS = -L`nc-config --libdir` `nf-config --flibs`
 
 all: model
 

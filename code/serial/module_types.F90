@@ -117,7 +117,7 @@ module module_types
 	real(wp), intent(in) :: dt
 	integer :: ll, k, i
 	
-	#ifdef USE_OPENACC
+#ifdef USE_OPENACC
 	  !$acc parallel loop collapse(3) present(s0%mem, tend%mem, s2%mem)
 	  do ll = 1, NVARS
 		do k = 1, nz
@@ -127,7 +127,7 @@ module module_types
 		end do
 	  end do
 	  !$acc end parallel loop
-	#else
+#else
 	  do ll = 1, NVARS
 		do k = 1, nz
 		  do i = 1, nx
@@ -135,7 +135,7 @@ module module_types
 		  end do
 		end do
 	  end do
-	#endif
+#endif
 	
   end subroutine update
 
@@ -157,7 +157,7 @@ module module_types
 
 	hv_coef = -hv_beta * dx / (16.0_wp*dt)
 
-	#ifdef USE_OPENACC
+#ifdef USE_OPENACC
 	  !$acc parallel loop collapse(2) present(atmostat%mem, ref%density, ref%denstheta, flux%mem) &
 	  !$acc   private(stencil, vals, d3_vals, r, u, w, t, p)
 	  do k = 1, nz
@@ -198,7 +198,7 @@ module module_types
 		end do
 	  end do
 	  !$acc end parallel loop
-	#else
+#else
 	  !$omp parallel do default(shared) &
 	  !$omp private(i, k, ll, s, stencil, vals, d3_vals, r, u, w, t, p)
 	  do k = 1, nz
@@ -239,7 +239,7 @@ module module_types
 		end do
 	  end do
 	  !$omp end parallel do
-	#endif
+#endif
 
   end subroutine xtend
 
@@ -260,7 +260,7 @@ module module_types
 
 	hv_coef = -hv_beta * dz / (16.0_wp*dt)
 
-	#ifdef USE_OPENACC
+#ifdef USE_OPENACC
 	  !$acc parallel loop collapse(2) present(atmostat%mem, ref%idens, ref%idenstheta, ref%pressure, flux%mem) &
 	  !$acc   private(stencil, vals, d3_vals, r, u, w, t, p)
 	  do k = 1, nz+1
@@ -316,7 +316,7 @@ module module_types
 	  end do
 	  !$acc end parallel loop
 
-	#else
+#else
 	!$omp parallel do default(shared) &
 	!$omp private(i, k, ll, s, stencil, vals, d3_vals, r, u, w, t, p)
 	do k = 1, nz+1
@@ -369,7 +369,7 @@ module module_types
 	  end do
 	end do
 	!$omp end parallel do
-  #endif
+#endif
 
   end subroutine ztend
 
@@ -378,7 +378,7 @@ module module_types
 	implicit none
 	class(atmospheric_state), intent(inout) :: s
 	integer :: k, ll
-	#ifdef USE_OPENACC
+#ifdef USE_OPENACC
 	  !$acc parallel loop collapse(2) present(s%mem)
 	  do ll = 1, NVARS
 		do k = 1, nz
@@ -389,7 +389,7 @@ module module_types
 		end do
 	  end do
 	  !$acc end parallel loop
-	#else
+#else
 	  do ll = 1, NVARS
 		do k = 1, nz
 		  s%mem(-1,k,ll)   = s%mem(nx-1,k,ll)
@@ -398,7 +398,7 @@ module module_types
 		  s%mem(nx+2,k,ll) = s%mem(2,k,ll)
 		end do
 	  end do
-	#endif
+#endif
   end subroutine exchange_halo_x
 
   subroutine exchange_halo_z(s,ref)
@@ -406,7 +406,7 @@ module module_types
 	class(atmospheric_state), intent(inout) :: s
 	class(reference_state), intent(in) :: ref
 	integer :: i, ll
-	#ifdef USE_OPENACC
+#ifdef USE_OPENACC
 	  !$acc parallel loop collapse(2) present(s%mem, ref%density)
 	  do ll = 1, NVARS
 		do i = 1-hs,nx+hs
@@ -433,7 +433,7 @@ module module_types
 		end do
 	  end do
 	  !$acc end parallel loop
-	#else
+#else
 	  do ll = 1, NVARS
 		do i = 1-hs,nx+hs
 		  if (ll == I_WMOM) then
@@ -458,7 +458,7 @@ module module_types
 		  end if
 		end do
 	  end do
-	#endif
+#endif
   end subroutine exchange_halo_z
 
   subroutine new_ref(ref)

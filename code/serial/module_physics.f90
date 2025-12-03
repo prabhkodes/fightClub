@@ -239,7 +239,7 @@ module module_physics
 
     mass = 0.0_wp
     te = 0.0_wp
-    #ifdef USE_OPENACC
+#ifdef USE_OPENACC
       !$acc parallel loop collapse(2) reduction(+:mass,te) &
       !$acc   present(oldstat%mem, ref%density, ref%denstheta)
       do k = 1, nz
@@ -257,7 +257,7 @@ module module_physics
         end do
       end do
       !$acc end parallel loop
-    #else
+#else
       do k = 1, nz
         do i = 1, nx
           r = oldstat%dens(i,k) + ref%density(k)
@@ -272,7 +272,7 @@ module module_physics
           te = te + (ke + r*cv*t)*dx*dz
         end do
       end do
-    #endif
+#endif
   end subroutine total_mass_energy
 
 end module module_physics
