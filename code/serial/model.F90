@@ -126,8 +126,10 @@ program atmosphere_model
 
   call init(etime,output_counter,dt)
   call total_mass_energy(mass0,te0)
-  call create_output( )
-  call write_record(oldstat,ref,etime)
+
+  ! --- For benchmark, removing file i/o
+  ! call create_output( )
+  ! call write_record(oldstat,ref,etime)
 
 #ifdef USE_OPENACC
   !$acc enter data create(oldstat, newstat, flux, tend, ref)
@@ -162,13 +164,16 @@ program atmosphere_model
 #ifdef USE_OPENACC
       !$acc update self(oldstat%mem)
 #endif
-      call write_record(oldstat,ref,etime)
+        ! --- For benchmark, removing file i/o
+      ! call write_record(oldstat,ref,etime)
     end if
 
   end do
 
   call total_mass_energy(mass1,te1)
-  call close_output( )
+  
+  ! --- For benchmark, removing file i/o
+  ! call close_output( )
 
 #ifdef USE_OPENACC
   !$acc exit data delete(oldstat%mem, newstat%mem, flux%mem, tend%mem)
