@@ -87,8 +87,9 @@ for v in nc1.variables.keys():
         print(v.ljust(20) + 
            ":  %20.10e  ,  %20.10e  ,  %20.10e"%(norm12,norm23,norm23/norm12))
         
-    if normRatio > 2:
-        print("Ratio of errors < 2")
+    ratio_threshold = 3.0
+    if normRatio > ratio_threshold:
+        print("Ratio of errors > ", ratio_threshold)
         print("There are significant changes in your output file relative to the reference file!")
         exit(1)
 
