@@ -80,7 +80,7 @@ if(USE_OPENACC)
     target_compile_definitions(model PRIVATE USE_OPENACC)
     target_compile_options(model PRIVATE
         -fast
-        #-Minfo=accel
+        -Minfo=accel
         -Mpreprocess
     )
 
