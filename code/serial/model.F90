@@ -129,6 +129,14 @@ program atmosphere_model
   call create_output( )
   call write_record(oldstat,ref,etime)
 
+#ifdef USE_OPENACC
+  !$acc enter data copyin(oldstat, newstat, flux, tend, ref)
+  !$acc enter data copyin(oldstat%mem, newstat%mem, flux%mem, tend%mem)
+  !$acc enter data copyin(ref%density, ref%denstheta, ref%idens, ref%idenstheta, ref%pressure)
+  !$acc enter data attach(oldstat%mem, newstat%mem, flux%mem, tend%mem)
+  !$acc enter data attach(ref%density, ref%denstheta, ref%idens, ref%idenstheta, ref%pressure)
+#endif
+
   ! Get initial tick count and the clock rate (ticks per second)
   call system_clock(t1, rate) 
 
@@ -151,6 +159,9 @@ program atmosphere_model
 
     if (output_counter >= output_freq) then
       output_counter = output_counter - output_freq
+#ifdef USE_OPENACC
+      !$acc update self(oldstat%mem)
+#endif
       call write_record(oldstat,ref,etime)
     end if
 
@@ -158,6 +169,12 @@ program atmosphere_model
 
   call total_mass_energy(mass1,te1)
   call close_output( )
+
+#ifdef USE_OPENACC
+  !$acc exit data delete(oldstat%mem, newstat%mem, flux%mem, tend%mem)
+  !$acc exit data delete(ref%density, ref%denstheta, ref%idens, ref%idenstheta, ref%pressure)
+  !$acc exit data delete(oldstat, newstat, flux, tend, ref)
+#endif
 
   if (my_rank == 0) then
       write(stdout,*) "----------------- Atmosphere check ----------------"
