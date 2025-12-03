@@ -392,7 +392,7 @@ module module_types
 
     if (nprocs == 1) then
       ! Serial case: local periodic boundary conditions
-    #ifdef USE_OPENACC
+#ifdef USE_OPENACC
       !$acc parallel loop collapse(2) present(s%mem)
       do ll = 1, NVARS
         do k = 1, nz
@@ -402,7 +402,7 @@ module module_types
           s%mem(nx+2,k,ll) = s%mem(2,k,ll)
         end do
       end do
-    #else
+#else
       do ll = 1, NVARS
         do k = 1, nz
           s%mem(-1,k,ll)   = s%mem(nx-1,k,ll)
@@ -411,7 +411,7 @@ module module_types
           s%mem(nx+2,k,ll) = s%mem(2,k,ll)
         end do
       end do
-    #endif
+#endif
     else
       ! Parallel case: MPI communication
       allocate(send_left(hs, nz, NVARS))
