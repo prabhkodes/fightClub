@@ -8,6 +8,7 @@ module module_types
   use legendre_quadrature
   use dimensions
   use iodir
+  use parallel_timer
 
   implicit none
 
@@ -384,6 +385,7 @@ module module_types
     real(wp), allocatable :: send_left(:,:,:), send_right(:,:,:)
     real(wp), allocatable :: recv_left(:,:,:), recv_right(:,:,:)
     integer :: req(4), status(MPI_STATUS_SIZE, 4)
+	type(CTimer) :: mpi_timer
 
 #ifdef USE_OPENACC
     !$acc update self(s%mem(1:nx,1:nz,:))
@@ -421,6 +423,9 @@ module module_types
 
       send_size = hs * nz * NVARS
 
+
+	call mpi_timer%start("MPI: Communication")
+
       ! Non-blocking send/receive with neighbors
       call MPI_Irecv(recv_left, send_size, MPI_DOUBLE_PRECISION, &
                      left_rank, 1, MPI_COMM_WORLD, req(1), ierr)
@@ -432,6 +437,8 @@ module module_types
                      left_rank, 2, MPI_COMM_WORLD, req(4), ierr)
 
       call MPI_Waitall(4, req, status, ierr)
+
+	call mpi_timer%stop()
 
       ! Copy received data to halos
       do ll = 1, NVARS
