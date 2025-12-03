@@ -15,7 +15,7 @@ ifeq ($(USE_OPENACC),1)
 else
 	# GNU compiler flags (original)
 	FCFLAGS = -Ofast $(FCFLAGS_BASE) -fPIC -fopenmp -DUSE_OPENMP -cpp
-    LDFLAGS = -L`nc-config --libdir` `nf-config --flibs` -lopen-pal
+    LDFLAGS = -L`nc-config --libdir` `nf-config --flibs`
 endif
 
 all: model
