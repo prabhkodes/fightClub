@@ -55,6 +55,12 @@ module module_output
       call ncwrap(nf90_def_var(ncid,'theta',iowp,[x_dimid,z_dimid,t_dimid],theta_varid), __LINE__)
       
       call ncwrap(nf90_enddef(ncid), __LINE__)
+    else
+      ! Dummy buffers to keep MPI interfaces valid on non-root ranks
+      allocate(global_dens(1,1))
+      allocate(global_uwnd(1,1))
+      allocate(global_wwnd(1,1))
+      allocate(global_theta(1,1))
     end if
 
     rec_out = 1
