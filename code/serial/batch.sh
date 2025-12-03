@@ -34,7 +34,7 @@ echo "CPUs / Task = ${SLURM_CPUS_PER_TASK} (OMP Threads)"
 
 # 3. Execution 
 
-mpirun -np 2 ./model
+mpirun -np 2 ./model 448 1000
 
 #4. END ba ba ba
 
