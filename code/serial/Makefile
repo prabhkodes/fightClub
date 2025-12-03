@@ -43,10 +43,13 @@ clean :
 	rm -f *.o *.mod model *.nc
 
 test: model
-	@echo "Running model test..."
-	@OUTPUT=$$(./model); \
+	@echo "Running model..."
+	@OUTPUT=$$(mpirun -np 1 ./model 100 1000 10); \
+# 	echo "$$OUTPUT"; \
 	MASS=$$(echo "$$OUTPUT" | awk '/Fractional Delta Mass/{print $$NF}'); \
 	ENERGY=$$(echo "$$OUTPUT" | awk '/Fractional Delta Energy/{print $$NF}'); \
+# 	echo "Fractional Delta Mass   = $$MASS"; \
+# 	echo "Fractional Delta Energy = $$ENERGY"; \
 	awk -v m="$$MASS" -v e="$$ENERGY" 'BEGIN { \
 	  mass = m + 0; energy = e + 0; \
 	  if (mass < 1e-13 && energy < 1e-3) { \
@@ -58,3 +61,5 @@ test: model
 		exit 1; \
 	  } \
 	}'
+	@echo "Compare output with reference output file..."
+	python3 nccmp3.py output-serial.nc output-serial-optimized.nc output.nc
