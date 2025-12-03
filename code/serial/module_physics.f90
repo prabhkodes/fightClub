@@ -243,6 +243,10 @@ module module_physics
 
     call pll_timer%start("Computation: total_mass_energy")
 
+#ifdef USE_OPENACC
+    !$acc update self(oldstat%mem)
+#endif
+
     local_mass = 0.0_wp
     local_te = 0.0_wp
     do k = 1, nz
