@@ -39,7 +39,7 @@ module_output.o : module_output.F90 module_physics.o
 module_physics.o : module_physics.f90 module_types.o parallel_timer.o
 	$(FC) $(FCFLAGS) $< -c
 
-module_nvtx.o: module_nvtx.F90
+module_nvtx.o: module_nvtx.f90
 	$(FC) $(FCFLAGS) $(CPPFLAGS) -c $<
 
 clean :
