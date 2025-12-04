@@ -2,6 +2,7 @@
 !/**/
 !*.*
 *nc
+!Doxyfile
 
 # Prerequisites
 *.d
