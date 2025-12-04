@@ -111,6 +111,67 @@ Wall Clock End:   12:06:54.228
 USED CPU TIME:              0.416140 seconds
 ```
 
+Parallel, with compiler optimization flags and GPU offloading on Leonardo
+```bash
+[jrayo000@lrdn0322 build]$ OMP_NUM_THREADS=1 mpirun -n 4 ./model 100 1000 10
+ ================= Execution Info ==================
+  Number of MPI tasks:    4
+   OpenMP: DISABLED
+  Number of GPUs available:    4
+   OpenACC: ENABLED
+ ===================================================
+  MPI Rank    0 -> GPU  0
+  MPI Rank    1 -> GPU  1
+  MPI Rank    3 -> GPU  3
+  MPI Rank    2 -> GPU  2
+ --------------- Domain Decomposition --------------
+  Global nx:    100
+  Local nx per process: ~    25
+ ---------------------------------------------------
+ SIMPLE ATMOSPHERIC MODEL STARTING.
+Wall Clock Start: 13:16:30.984
+ INITIALIZING MODEL STATUS.
+ nx_global  :           100
+ nx_local   :            25
+ nz         :            50
+ dx         :     200.0000000000000     
+ dz         :     200.0000000000000     
+ dt         :    0.6666666666666666     
+ final time :     1000.000000000000     
+ MODEL STATUS INITIALIZED.
+ TIME PERCENT :  0%
+ TIME PERCENT : 10%
+ TIME PERCENT : 20%
+ TIME PERCENT : 30%
+ TIME PERCENT : 40%
+ TIME PERCENT : 50%
+ TIME PERCENT : 60%
+ TIME PERCENT : 70%
+ TIME PERCENT : 80%
+ TIME PERCENT : 90%
+ ----------------- Atmosphere check ----------------
+ Fractional Delta Mass  :   -1.9541502512719523E-016
+ Fractional Delta Energy:    1.0051785903963127E-004
+ ---------------------------------------------------
+ ----------------------------------------------------------------------------------------------------
+ PARALLEL TIMING STATISTICS (Microseconds)
+                      Function      Max Total       Max Excl      Avg Total     Calls
+ ----------------------------------------------------------------------------------------------------
+                          INIT        7003.29         709.00        6988.19         4
+          Computation: thermal        6304.66        2306.16        6291.93     57228
+Computation: hydrostatic_const        4019.37        4019.37        4004.93     57228
+Computation: total_mass_energy         764.49         150.51         752.23         8
+            MPI: Communication       23811.84       23811.84       22877.72     18020
+       Computation: rungekutta      764785.78        1006.35      764769.74      6004
+             Computation: step      763792.72      742497.44      763774.35     36024
+ ----------------------------------------------------------------------------------------------------
+ * Max Total/Excl: The slowest rank for that function.
+ * Avg Total: Average wall time across all ranks.
+ SIMPLE ATMOSPHERIC MODEL RUN COMPLETED.
+Wall Clock End:   13:16:31.759
+USED CPU TIME:              0.766376 seconds
+```
+
 Serial, with compiler optimization flags on Ubuntu 22.02 with GNU compiler
 ```bash
 root@3f0e2852e6ec:/app# OMP_NUM_THREADS=1 ./model 100 1000 10
@@ -141,7 +202,7 @@ root@3f0e2852e6ec:/app# OMP_NUM_THREADS=1 ./model 100 1000 10
  USED CPU TIME:   0.91237400000000002
 ```
 
-Serial, with compiler optimization flags on `boost_usr_prd` partition
+Serial, with compiler optimization flags on Leonardo
 ```bash
 [jrayo000@lrdn2570 serial]$ OMP_NUM_THREADS=1 ./model 500 1000 10
  SIMPLE ATMOSPHERIC MODEL STARTING.
