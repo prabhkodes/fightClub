@@ -117,6 +117,24 @@ link_directories(${NC_LIBDIR})
 target_link_libraries(model PRIVATE ${NF_FLIBS} MPI::MPI_Fortran)
 
 # ------------------------------------------------------------
+# Generate documentation
+# ------------------------------------------------------------
+find_package(Doxygen)
+if(Doxygen_FOUND)
+    set(DOXYGEN_IN  ${CMAKE_SOURCE_DIR}/Doxyfile) # original config file
+    set(DOXYGEN_OUT ${CMAKE_BINARY_DIR}/doc/Doxyfile) # where to store inside 'build' folder
+
+    configure_file(${DOXYGEN_IN} ${DOXYGEN_OUT} @ONLY)
+
+    add_custom_target(doc
+        COMMAND ${DOXYGEN_EXECUTABLE} ${DOXYGEN_OUT}
+        WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/doc # where to save the generated docs
+        COMMENT "Generating API documentation with Doxygen"
+        VERBATIM
+    )
+endif()
+
+# ------------------------------------------------------------
 # Test setup (replicates `make test`)
 # ------------------------------------------------------------
 enable_testing()
