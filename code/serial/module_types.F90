@@ -629,7 +629,9 @@ module module_types
 	call nvtx_pop()
 #endif
 
-  end subroutine exchange_halo_z  subroutine new_ref(ref)
+  end subroutine exchange_halo_z
+
+  subroutine new_ref(ref)
 	implicit none
 	class(reference_state), intent(inout) :: ref
 	allocate(ref%density(1-hs:nz+hs))
