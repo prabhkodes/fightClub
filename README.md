@@ -19,7 +19,7 @@ First rule of fight club is we don't talk about fight club.
 - `runenv.sh` contains the commands to initialize the containerized environment
 
 ## Source code structure
-- `model.F90` contains the main routine
+- `model.F90` contains the main routine of the program
 - `module_output.F90` contains the routines relevant for output file generation in parallel
 - `module_parameters.F90` contains parameters for domain decomposition and solvers, as well as physical constants
 - `module_physics.F90` takes care of initial and boundary conditions, numerical solution and calculation of mass and energy budgets
@@ -31,7 +31,7 @@ First rule of fight club is we don't talk about fight club.
 Make sure your system has the following packages installed: `cmake`, `graphviz`, `doxygen`, `gfortran`, `libmpich-dev`, `libnetcdff-dev`, `python3`, `python3-pip`, `build-essential` and should be able to be found by CMake. These are the package names in Ubuntu 22.02. You may install CUDA device drivers so you offload computation to GPU if your system supports it. If you do this, skip Option B and continue below.
 
 ### Option B
-If you want to quickly install all of packages in an isolated environment, you can simply run `runenv.sh` and continue below. This assumes you have Docker engine installed on your machine
+If you want to quickly install all of the packages in an isolated environment, you can simply run `runenv.sh` and continue below. This assumes you have Docker engine installed on your machine.
 
 ### Build and run
 When you have all the packages installed:
@@ -56,6 +56,18 @@ If you want to manually run the executable file, you can do the following:
 cd serial/build
 mpirun -n 4 ./model 100 1000 10 # No of grid points in x-axis, number of timesteps, output frequency
 ```
+
+### Documentation
+We used Doxygen to generate the documentation. Use the target `doc` on the build folder to do this. Note: do not try to generate it manually using `doxygen` command.
+```bash
+cd fightClub/serial
+mkdir build
+cd build
+cmake .. -DUSE_OPENACC=ON # if compiling on a system with MPI+GPU. otherwise don't include this flag and it will only compile with MPI+OpenMP flags
+make doc
+```
+
+On your web browser, you can view the webpage by accessing `[file:///../fightClub/code/serial/build/doc/html/index.html](file:///../fightClub/code/serial/build/doc/html/index.html)`.
 
 ### Output file
 An output file `output.nc` will be generated on the same location as the executable file. You may visualize it using `ncview` or VisIt. To compare the output file with the reference output files you can run the command

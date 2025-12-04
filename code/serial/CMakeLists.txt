@@ -121,10 +121,16 @@ target_link_libraries(model PRIVATE ${NF_FLIBS} MPI::MPI_Fortran)
 # ------------------------------------------------------------
 find_package(Doxygen)
 if(Doxygen_FOUND)
-    set(DOXYGEN_IN  ${CMAKE_SOURCE_DIR}/Doxyfile) # original config file
+    set(DOXYGEN_IN  ${CMAKE_SOURCE_DIR}/doc/Doxyfile) # original config file
     set(DOXYGEN_OUT ${CMAKE_BINARY_DIR}/doc/Doxyfile) # where to store inside 'build' folder
+    set(DOXYGEN_STYLE1_IN  ${CMAKE_SOURCE_DIR}/doc/custom.css) # original config file
+    set(DOXYGEN_STYLE1_OUT ${CMAKE_BINARY_DIR}/doc/custom.css) # where to store inside 'build' folder
+    set(DOXYGEN_STYLE2_IN  ${CMAKE_SOURCE_DIR}/doc/custom_dark_theme.css) # original config file
+    set(DOXYGEN_STYLE2_OUT ${CMAKE_BINARY_DIR}/doc/custom_dark_theme.css) # where to store inside 'build' folder
 
     configure_file(${DOXYGEN_IN} ${DOXYGEN_OUT} @ONLY)
+    configure_file(${DOXYGEN_STYLE1_IN} ${DOXYGEN_STYLE1_OUT} @ONLY)
+    configure_file(${DOXYGEN_STYLE2_IN} ${DOXYGEN_STYLE2_OUT} @ONLY)
 
     add_custom_target(doc
         COMMAND ${DOXYGEN_EXECUTABLE} ${DOXYGEN_OUT}
