@@ -23,6 +23,13 @@ module module_types
   public :: atmospheric_tendency
 
   public :: assignment(=)
+  public :: init_halo_buffers
+  public :: free_halo_buffers
+
+  real(wp), allocatable, save :: send_left(:,:,:), send_right(:,:,:)
+  real(wp), allocatable, save :: recv_left(:,:,:), recv_right(:,:,:)
+  integer, save :: halo_size = 0
+  logical, save :: halos_allocated = .false.
 
   type reference_state
 	real(wp), allocatable, dimension(:) :: density
@@ -81,6 +88,37 @@ module module_types
   end interface assignment(=)
 
   contains
+
+  subroutine init_halo_buffers()
+	implicit none
+
+	if (halos_allocated) return
+
+	halo_size = hs * nz * NVARS
+	allocate(send_left(hs, nz, NVARS), send_right(hs, nz, NVARS))
+	allocate(recv_left(hs, nz, NVARS), recv_right(hs, nz, NVARS))
+#ifdef USE_OPENACC
+	! Keep halo buffers resident on the device to avoid per-call staging
+	!$acc enter data create(send_left, send_right, recv_left, recv_right)
+#endif
+	halos_allocated = .true.
+  end subroutine init_halo_buffers
+
+  subroutine free_halo_buffers()
+	implicit none
+	if (.not. halos_allocated) return
+#ifdef USE_OPENACC
+	if (acc_is_present(send_left)) then
+	  !$acc exit data delete(send_left, send_right, recv_left, recv_right)
+	end if
+#endif
+	if (allocated(send_left)) deallocate(send_left)
+	if (allocated(send_right)) deallocate(send_right)
+	if (allocated(recv_left)) deallocate(recv_left)
+	if (allocated(recv_right)) deallocate(recv_right)
+	halo_size = 0
+	halos_allocated = .false.
+  end subroutine free_halo_buffers
 
   subroutine new_state(atmo)
 	implicit none
@@ -385,10 +423,11 @@ module module_types
     class(atmospheric_state), intent(inout) :: s
     integer :: k, ll, ierr
     integer :: send_size
-    real(wp), allocatable :: send_left(:,:,:), send_right(:,:,:)
-    real(wp), allocatable :: recv_left(:,:,:), recv_right(:,:,:)
     integer :: req(4), status(MPI_STATUS_SIZE, 4)
     type(CTimer) :: mpi_timer
+
+    if (.not. halos_allocated) call init_halo_buffers()
+    send_size = halo_size
 
     if (nprocs == 1) then
       ! Serial case: local periodic boundary conditions
@@ -414,16 +453,9 @@ module module_types
 #endif
     else
       ! Parallel case: MPI communication
-      allocate(send_left(hs, nz, NVARS))
-      allocate(send_right(hs, nz, NVARS))
-      allocate(recv_left(hs, nz, NVARS))
-      allocate(recv_right(hs, nz, NVARS))
-      send_size = hs * nz * NVARS
 
 #ifdef USE_OPENACC
       if (acc_is_present(s%mem)) then
-        !$acc enter data create(send_left, send_right, recv_left, recv_right)
-
         ! Pack halos on device to avoid host staging
         !$acc parallel loop collapse(2) present(send_left, send_right, s%mem)
         do ll = 1, NVARS
@@ -462,7 +494,6 @@ module module_types
         end do
         !$acc end parallel loop
 
-        !$acc exit data delete(send_left, send_right, recv_left, recv_right)
       else
 #endif
         ! Prepare data to send on host
@@ -503,7 +534,6 @@ module module_types
       end if
 #endif
 
-      deallocate(send_left, send_right, recv_left, recv_right)
     end if
 
   end subroutine exchange_halo_x

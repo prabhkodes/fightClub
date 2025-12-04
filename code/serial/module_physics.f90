@@ -55,6 +55,8 @@ module module_physics
     call tend%new_tendency( )
     call ref%new_ref( )
 
+    call init_halo_buffers()
+
     dt = min(dx,dz) / max_speed * cfl
     etime = 0.0_wp
     output_counter = 0.0_wp
@@ -233,6 +235,7 @@ module module_physics
     call flux%del_flux( )
     call tend%del_tendency( )
     call ref%del_ref( )
+    call free_halo_buffers()
   end subroutine finalize
 
   subroutine total_mass_energy(mass,te)
