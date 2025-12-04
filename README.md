@@ -22,9 +22,15 @@ First rule of fight club is we don't talk about fight club.
 - `module_types.F90` calculates the atmospheric state type, flux and tendency, as well as handle halo exchange
 - `parallel_timer.F90` is used to time the execution of several routines among all ranks and generates a summary on total time, max time, average time and number of calls.
 
-## How to build and run
-Make sure your system has the following packages installed: `cmake`, `graphviz`, `doxygen`, `gfortran`, `libmpich-dev`, `libnetcdff-dev`, `python3`, `python3-pip`, `build-essential`, CUDA device drivers (optional, to offload computation to GPU) and should be able to be found by CMake.
+## Running the program
+### Option A
+Make sure your system has the following packages installed: `cmake`, `graphviz`, `doxygen`, `gfortran`, `libmpich-dev`, `libnetcdff-dev`, `python3`, `python3-pip`, `build-essential` and should be able to be found by CMake. These are the package names in Ubuntu 22.02. You may install CUDA device drivers so you offload computation to GPU, if available. If you do this, skip Option B and continue below.
 
+### Option B
+If you want to quickly install all of packages in an isolated environment, you can simply run `runenv.sh` and continue below. This assumes you have Docker engine installed on your machine
+
+### Build and run
+When you have all the packages installed:
 1. Change working directory
 2. Build the CMake project
 3. Test the program if it runs properly
@@ -47,10 +53,76 @@ cd serial/build
 mpirun -n 4 ./model 100 1000 10 # No of grid points in x-axis, number of timesteps, output frequency
 ```
 
+### Sample output
+Serial, with compiler optimization flags on Ubuntu 22.02 with GNU compiler
+```bash
+root@3f0e2852e6ec:/app# OMP_NUM_THREADS=1 ./model 100 1000 10
+ SIMPLE ATMOSPHERIC MODEL STARTING.
+ INITIALIZING MODEL STATUS.
+ nx         :          100
+ nz         :           50
+ dx         :    200.00000000000000     
+ dz         :    200.00000000000000     
+ dt         :   0.66666666666666663     
+ final time :    1000.0000000000000     
+ MODEL STATUS INITIALIZED.
+ TIME PERCENT :  0%
+ TIME PERCENT : 10%
+ TIME PERCENT : 20%
+ TIME PERCENT : 30%
+ TIME PERCENT : 40%
+ TIME PERCENT : 50%
+ TIME PERCENT : 60%
+ TIME PERCENT : 70%
+ TIME PERCENT : 80%
+ TIME PERCENT : 90%
+ ----------------- Atmosphere check ----------------
+ Fractional Delta Mass  :    2.7748933568062396E-014
+ Fractional Delta Energy:    1.0051785903549762E-004
+ ---------------------------------------------------
+ SIMPLE ATMOSPHERIC MODEL RUN COMPLETED.
+ USED CPU TIME:   0.91237400000000002
+```
+
+Serial, with compiler optimization flags on `boost_usr_prd` partition
+```bash
+[jrayo000@lrdn2570 serial]$ OMP_NUM_THREADS=1 ./model 500 1000 10
+ SIMPLE ATMOSPHERIC MODEL STARTING.
+ INITIALIZING MODEL STATUS.
+ nx         :          500
+ nz         :          250
+ dx         :    40.000000000000000     
+ dz         :    40.000000000000000     
+ dt         :   0.13333333333333333     
+ final time :    1000.0000000000000     
+ MODEL STATUS INITIALIZED.
+ TIME PERCENT :  0%
+ TIME PERCENT : 10%
+ TIME PERCENT : 20%
+ TIME PERCENT : 30%
+ TIME PERCENT : 40%
+ TIME PERCENT : 50%
+ TIME PERCENT : 60%
+ TIME PERCENT : 70%
+ TIME PERCENT : 80%
+ TIME PERCENT : 90%
+ ----------------- Atmosphere check ----------------
+ Fractional Delta Mass  :   -1.9541502512719538E-016
+ Fractional Delta Energy:    1.2056948351433392E-004
+ ---------------------------------------------------
+ SIMPLE ATMOSPHERIC MODEL RUN COMPLETED.
+ USED CPU TIME:    343.14903285899999
+```
+
 ## Running on Leonardo
 You can see the slurm scripts to see how the program was built and run on the cluster:
 - `cpu_model.sh`, `gpu_model.sh`
 - `serial/batch.sh`, `serial/gpu_batch.sh`, `serial/gpu.sh`
+
+Sample command to upload your files to the cluster. This assumes that you have SSH key acquired from `step`:
+```bash
+rsync -arvzP code leo:/leonardo_scratch/large/userexternal/jrayo000
+```
 
 ### Project Path
 ```
