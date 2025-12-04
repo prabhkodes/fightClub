@@ -5,9 +5,9 @@
 #SBATCH --qos=boost_qos_dbg           # Cola de debug (máx ~30 min)
 #SBATCH --time=00:10:00               # 10 minutos para probar
 #SBATCH --nodes=1
-#SBATCH --ntasks-per-node=1           # 1 MPI rank
+#SBATCH --ntasks-per-node=4           # 1 MPI rank
 #SBATCH --cpus-per-task=1             # 1 hilo CPU por rank
-#SBATCH --gres=gpu:1                  # 1 GPU
+#SBATCH --gres=gpu:4                  # 4 GPUs
 #SBATCH --output=logs/%x_%j.out
 #SBATCH --error=logs/%x_%j.err
 
@@ -30,6 +30,6 @@ echo "Nodes = ${SLURM_NNODES}"
 echo "Tasks / Node = ${SLURM_NTASKS_PER_NODE}"
 echo "CPUs / Task = ${SLURM_CPUS_PER_TASK} (OMP Threads)"
 
-srun ./model 112 1000 0
+srun ./model 100 1000
 
 echo "--- Ending Simulation ---"
