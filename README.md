@@ -67,7 +67,7 @@ cmake .. -DUSE_OPENACC=ON # if compiling on a system with MPI+GPU. otherwise don
 make doc
 ```
 
-On your web browser, you can view the webpage by accessing `[file:///../fightClub/code/serial/build/doc/html/index.html](file:///../fightClub/code/serial/build/doc/html/index.html)`.
+On your web browser, you can view the webpage by accessing `file:///../fightClub/code/serial/build/doc/html/index.html`.
 
 ### Output file
 An output file `output.nc` will be generated on the same location as the executable file. You may visualize it using `ncview` or VisIt. To compare the output file with the reference output files you can run the command
