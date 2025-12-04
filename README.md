@@ -76,7 +76,7 @@ python3 nccmp3.py output-serial.nc output-serial-optimized.nc output.nc
 ```
 This assumes you have a Python virtual environment with the packages from `requirements.txt` installed, if you went for Option A.
 
-The output of the program is below. If the ratios are at least 2.0 (our test case) then there may be a significant difference from the reference files and you may look at the results further.
+Sample output of the program is below. If the ratios are at least 2.0 (our test case) then there may be a significant difference from the reference files and you may look at the results further.
 ```bash
 #################
 Var Name            :  |1-2|                 ,  |2-3|                 ,  |2-3|/|1-2|
@@ -278,15 +278,17 @@ rsync -arvzP code leo:/leonardo_scratch/large/userexternal/jrayo000
 ```
 
 ### Project Path
-```
+```bash
 /leonardo/pub/userexternal/jgordill/fightClub
 ```
+
 ### Modules
 #### MPI+OpenMP
-```
+```bash
 module purge
 
 # Compiler
+module load cmake/3.27.9
 module load gcc/12.2.0
 
 # MPI
@@ -294,13 +296,15 @@ module load openmpi/4.1.6--gcc--12.2.0-cuda-12.2
 
 # NetCDF Fortran
 module load netcdf-fortran/4.6.1--openmpi--4.1.6--gcc--12.2.0-spack0.22
+
 ```
 
 ### MPI+OpenACC
-```
+```bash
 module purge
 
 # Compiler
+module load cmake/3.27.9
 module load nvhpc/24.5
 
 # MPI
@@ -309,4 +313,27 @@ module load hpcx-mpi/2.19
 # NetCDF Fortran
 module load netcdf-fortran/4.6.1--hpcx-mpi--2.19--nvhpc--24.5
 module load binutils/2.42
+```
+
+### Python (for running output comparison test)
+Load packages
+```bash
+module purge
+
+module load python/3.11
+module load gcc/12.2.0
+module load openmpi/4.1.6--gcc--12.2.0-cuda-12.2
+module load netcdf-c/4.9.2--openmpi--4.1.6--gcc--12.2.0-spack0.22
+module load parallel-netcdf/1.12.3--openmpi--4.1.6--gcc--12.2.0-spack0.22
+```
+
+Create virtual environment and install packages. You may also have the option not to explicitly activate/deactivate the virtual env by directly using the executable files inside.
+```bash
+python3 -m venv pyenv
+pyenv/bin/pip install numpy netCDF4
+```
+
+Run the program
+```bash
+pyenv/bin/python nccmp3.py output-serial.nc output-serial-optimized.nc output.nc
 ```

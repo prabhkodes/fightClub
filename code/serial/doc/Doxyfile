@@ -5,13 +5,13 @@ OUTPUT_DIRECTORY       = .
 CREATE_SUBDIRS         = NO
 FULL_PATH_NAMES        = YES
 STRIP_FROM_PATH        = ..
-USE_MDFILE_AS_MAINPAGE = ../README.md
+# USE_MDFILE_AS_MAINPAGE = README.md
 MARKDOWN_SUPPORT       = YES
 
 # ---- Input ----
 # Where your source lives
 INPUT                  = ../..
-RECURSIVE              = YES
+RECURSIVE              = NO
 
 # Only look at Fortran sources (and maybe CMake, etc, if you want)
 FILE_PATTERNS          = *.f *.F *.f90 *.F90
