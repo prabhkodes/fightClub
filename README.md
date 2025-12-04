@@ -54,6 +54,63 @@ mpirun -n 4 ./model 100 1000 10 # No of grid points in x-axis, number of timeste
 ```
 
 ### Sample output
+Parallel, with compiler optimization flags on Ubuntu 22.02 with GNU compiler
+```bash
+root@91d7785e2597:/app/build# OMP_NUM_THREADS=2 mpirun -n 4 ./model 100 1000 0
+ ================= Execution Info ==================
+  Number of MPI tasks:    4
+  Number of OpenMP threads:    2
+   OpenMP: ENABLED
+   OpenACC: DISABLED
+ ===================================================
+ --------------- Domain Decomposition --------------
+  Global nx:    100
+  Local nx per process: ~    25
+ ---------------------------------------------------
+ SIMPLE ATMOSPHERIC MODEL STARTING.
+Wall Clock Start: 12:06:53.808
+ INITIALIZING MODEL STATUS.
+ nx_global  :          100
+ nx_local   :           25
+ nz         :           50
+ dx         :    200.00000000000000     
+ dz         :    200.00000000000000     
+ dt         :   0.66666666666666663     
+ final time :    1000.0000000000000     
+ MODEL STATUS INITIALIZED.
+ TIME PERCENT :  0%
+ TIME PERCENT : 10%
+ TIME PERCENT : 20%
+ TIME PERCENT : 30%
+ TIME PERCENT : 40%
+ TIME PERCENT : 50%
+ TIME PERCENT : 60%
+ TIME PERCENT : 70%
+ TIME PERCENT : 80%
+ TIME PERCENT : 90%
+ ----------------- Atmosphere check ----------------
+ Fractional Delta Mass  :   -6.0578657789430107E-015
+ Fractional Delta Energy:    1.0051785904252513E-004
+ ---------------------------------------------------
+ ----------------------------------------------------------------------------------------------------
+ PARALLEL TIMING STATISTICS (Microseconds)
+                      Function      Max Total       Max Excl      Avg Total     Calls
+ ----------------------------------------------------------------------------------------------------
+                          INIT        3778.42         685.63        3758.13         4
+          Computation: thermal        3118.97        1623.71        3089.61     57228
+Computation: hydrostatic_const        1587.39        1587.39        1555.97     57228
+Computation: total_mass_energy         281.50         104.25         217.03         8
+            MPI: Communication       73227.01       73227.01       72265.45     18020
+       Computation: rungekutta      415414.62        1440.36      415298.07      6004
+             Computation: step      414268.06      343668.06      414068.18     36024
+ ----------------------------------------------------------------------------------------------------
+ * Max Total/Excl: The slowest rank for that function.
+ * Avg Total: Average wall time across all ranks.
+ SIMPLE ATMOSPHERIC MODEL RUN COMPLETED.
+Wall Clock End:   12:06:54.228
+USED CPU TIME:              0.416140 seconds
+```
+
 Serial, with compiler optimization flags on Ubuntu 22.02 with GNU compiler
 ```bash
 root@3f0e2852e6ec:/app# OMP_NUM_THREADS=1 ./model 100 1000 10
