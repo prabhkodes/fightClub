@@ -11,7 +11,7 @@ ifeq ($(USE_OPENACC),1)
 	# NVHPC compiler flags with OpenACC
     FC = mpifort
     FCFLAGS = -fast -acc -gpu=cc80 -Minfo=accel -Mpreprocess $(FCFLAGS_BASE) -DUSE_OPENACC
-    LDFLAGS = -L`nc-config --libdir` `nf-config --flibs`
+    LDFLAGS = -L`nc-config --libdir` `nf-config --flibs` -L$(CUDA_HOME)/lib64 -lnvToolsExt
 else
 	# GNU compiler flags (original)
 	FCFLAGS = -Ofast $(FCFLAGS_BASE) -fPIC -fopenmp -DUSE_OPENMP -cpp
@@ -21,7 +21,7 @@ endif
 all: model
 
 model : model.F90 module_parameters.o module_types.F90 module_physics.o \
-		module_output.o parallel_timer.o
+		module_output.o parallel_timer.o module_nvtx.o
 	$(FC) $(FCFLAGS) $< -o $@ *.o $(LDFLAGS)
 
 module_parameters.o : module_parameters.f90
@@ -38,6 +38,9 @@ module_output.o : module_output.F90 module_physics.o
 
 module_physics.o : module_physics.f90 module_types.o parallel_timer.o
 	$(FC) $(FCFLAGS) $< -c
+
+module_nvtx.o: module_nvtx.F90
+	$(FC) $(FCFLAGS) $(CPPFLAGS) -c $<
 
 clean :
 	rm -f *.o *.mod model *.nc

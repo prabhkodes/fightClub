@@ -2,6 +2,7 @@ module module_types
   use mpi
 #ifdef USE_OPENACC
   use openacc
+  use module_nvtx
 #endif
   use calculation_types
   use physical_constants
@@ -196,6 +197,10 @@ module module_types
 	real(wp), dimension(STEN_SIZE) :: stencil
 	real(wp), dimension(NVARS) :: d3_vals, vals
 
+#ifdef USE_OPENACC
+	call nvtx_push("X-Direction Tendency")
+#endif
+
 	call atmostat%exchange_halo_x( )
 
 	hv_coef = -hv_beta * dx / (16.0_wp*dt)
@@ -284,6 +289,10 @@ module module_types
 	  !$omp end parallel do
 #endif
 
+#ifdef USE_OPENACC
+	call nvtx_pop()
+#endif
+
   end subroutine xtend
 
 
@@ -298,6 +307,10 @@ module module_types
 	real(wp) :: r, u, w, t, p, hv_coef
 	real(wp), dimension(STEN_SIZE) :: stencil
 	real(wp), dimension(NVARS) :: d3_vals, vals
+
+#ifdef USE_OPENACC
+	call nvtx_push("Z-Direction Tendency")
+#endif
 
 	call atmostat%exchange_halo_z(ref)
 
@@ -410,13 +423,15 @@ module module_types
 		  end if
 		end do
 	  end do
-	end do
-	!$omp end parallel do
+	  end do
+	  !$omp end parallel do
+#endif
+
+#ifdef USE_OPENACC
+	call nvtx_pop()
 #endif
 
   end subroutine ztend
-
-
   subroutine exchange_halo_x(s)
     use mpi
     implicit none
@@ -428,6 +443,10 @@ module module_types
 
     if (.not. halos_allocated) call init_halo_buffers()
     send_size = halo_size
+
+#ifdef USE_OPENACC
+    call nvtx_push("Halo Exchange X")
+#endif
 
     if (nprocs == 1) then
       ! Serial case: local periodic boundary conditions
@@ -536,6 +555,10 @@ module module_types
 
     end if
 
+#ifdef USE_OPENACC
+    call nvtx_pop()
+#endif
+
   end subroutine exchange_halo_x
 
   subroutine exchange_halo_z(s,ref)
@@ -543,6 +566,10 @@ module module_types
 	class(atmospheric_state), intent(inout) :: s
 	class(reference_state), intent(in) :: ref
 	integer :: i, ll
+
+#ifdef USE_OPENACC
+	call nvtx_push("Halo Exchange Z")
+#endif
 
 #ifdef USE_OPENACC
 		  !$acc parallel loop collapse(2) present(s%mem, ref%density)
@@ -593,13 +620,16 @@ module module_types
 			s%mem(i,0,ll) = s%mem(i,1,ll)
 			s%mem(i,nz+1,ll) = s%mem(i,nz,ll)
 			s%mem(i,nz+2,ll) = s%mem(i,nz,ll)
-		  end if
+		end if
 		end do
 	  end do
 #endif
-  end subroutine exchange_halo_z
 
-  subroutine new_ref(ref)
+#ifdef USE_OPENACC
+	call nvtx_pop()
+#endif
+
+  end subroutine exchange_halo_z  subroutine new_ref(ref)
 	implicit none
 	class(reference_state), intent(inout) :: ref
 	allocate(ref%density(1-hs:nz+hs))

@@ -2,6 +2,7 @@ module module_physics
   use mpi
 #ifdef USE_OPENACC
   use openacc
+  use module_nvtx
 #endif
   use calculation_types, only : wp
   use physical_constants
@@ -133,6 +134,10 @@ module module_physics
 
     call pll_timer%start("Computation: rungekutta")
 
+#ifdef USE_OPENACC
+    call nvtx_push("Runge-Kutta Integration")
+#endif
+
     dt1 = dt/1.0_wp
     dt2 = dt/2.0_wp
     dt3 = dt/3.0_wp
@@ -152,6 +157,10 @@ module module_physics
       call step(s0, s1, s0, dt1, DIR_X, fl, tend)
     end if
     dimswitch = .not. dimswitch
+
+#ifdef USE_OPENACC
+    call nvtx_pop()
+#endif
   end subroutine rungekutta
 
   ! Semi-discretized step in time:
@@ -250,6 +259,10 @@ module module_physics
 
     call pll_timer%start("Computation: total_mass_energy")
 
+#ifdef USE_OPENACC
+    call nvtx_push("Conservation Check")
+#endif
+
     local_mass = 0.0_wp
     local_te = 0.0_wp
 #ifdef USE_OPENACC
@@ -294,6 +307,10 @@ module module_physics
     call MPI_Allreduce(local_mass, mass, 1, MPI_DOUBLE_PRECISION, MPI_SUM, MPI_COMM_WORLD, ierr)
     call MPI_Allreduce(local_te, te, 1, MPI_DOUBLE_PRECISION, MPI_SUM, MPI_COMM_WORLD, ierr)
     call mpi_timer%stop()
+
+#ifdef USE_OPENACC
+    call nvtx_pop()
+#endif
 
   end subroutine total_mass_energy
 
