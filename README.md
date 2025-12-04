@@ -2,6 +2,10 @@
 ## 2-D Euler Equations
 First rule of fight club is we don't talk about fight club.
 
+![alt text](code/results/movie0000.jpeg)
+![alt text](code/results/movie0050.jpeg)
+![alt text](code/results/movie0100.jpeg)
+
 ## Directory structure
 - `code` contains the source code, scripts to run scaling tests in Leonardo
   - `serial` contains the main source code
