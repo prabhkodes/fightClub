@@ -24,7 +24,7 @@ First rule of fight club is we don't talk about fight club.
 
 ## Running the program
 ### Option A
-Make sure your system has the following packages installed: `cmake`, `graphviz`, `doxygen`, `gfortran`, `libmpich-dev`, `libnetcdff-dev`, `python3`, `python3-pip`, `build-essential` and should be able to be found by CMake. These are the package names in Ubuntu 22.02. You may install CUDA device drivers so you offload computation to GPU, if available. If you do this, skip Option B and continue below.
+Make sure your system has the following packages installed: `cmake`, `graphviz`, `doxygen`, `gfortran`, `libmpich-dev`, `libnetcdff-dev`, `python3`, `python3-pip`, `build-essential` and should be able to be found by CMake. These are the package names in Ubuntu 22.02. You may install CUDA device drivers so you offload computation to GPU if your system supports it. If you do this, skip Option B and continue below.
 
 ### Option B
 If you want to quickly install all of packages in an isolated environment, you can simply run `runenv.sh` and continue below. This assumes you have Docker engine installed on your machine
@@ -51,6 +51,25 @@ If you want to manually run the executable file, you can do the following:
 ```bash
 cd serial/build
 mpirun -n 4 ./model 100 1000 10 # No of grid points in x-axis, number of timesteps, output frequency
+```
+
+### Output file
+An output file `output.nc` will be generated on the same location as the executable file. You may visualize it using `ncview` or VisIt. To compare the output file with the reference output files you can run the command
+```bash
+python3 nccmp3.py output-serial.nc output-serial-optimized.nc output.nc
+```
+This assumes you have a Python virtual environment with the packages from `requirements.txt` installed, if you went for Option A.
+
+The output of the program is below. If the ratios are at least 2.0 (our test case) then there may be a significant difference from the reference files and you may look at the results further.
+```bash
+#################
+Var Name            :  |1-2|                 ,  |2-3|                 ,  |2-3|/|1-2|
+rho                 :      1.4099532998e-25  ,      1.5196072173e-25  ,      1.0777713116e+00
+u                   :      8.3295645703e-27  ,      9.2624723271e-27  ,      1.1119995828e+00
+w                   :      5.0759644567e-27  ,      7.2049604373e-27  ,      1.4194268890e+00
+theta               :      2.0989239882e-26  ,      2.1411913543e-26  ,      1.0201376355e+00
+#################
+TEST PASSED.
 ```
 
 ### Sample output
