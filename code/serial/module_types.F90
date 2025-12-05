@@ -7,6 +7,7 @@ module module_types
   use mpi
 #ifdef USE_OPENACC
   use openacc
+  use module_nvtx
 #endif
   use calculation_types
   use physical_constants
@@ -28,6 +29,13 @@ module module_types
   public :: atmospheric_tendency
 
   public :: assignment(=)
+  public :: init_halo_buffers
+  public :: free_halo_buffers
+
+  real(wp), allocatable, save :: send_left(:,:,:), send_right(:,:,:)
+  real(wp), allocatable, save :: recv_left(:,:,:), recv_right(:,:,:)
+  integer, save :: halo_size = 0
+  logical, save :: halos_allocated = .false.
 
   !> @brief Hydrostatic reference profiles and interface values.
   type reference_state
@@ -90,6 +98,37 @@ module module_types
   end interface assignment(=)
 
   contains
+
+  subroutine init_halo_buffers()
+	implicit none
+
+	if (halos_allocated) return
+
+	halo_size = hs * nz * NVARS
+	allocate(send_left(hs, nz, NVARS), send_right(hs, nz, NVARS))
+	allocate(recv_left(hs, nz, NVARS), recv_right(hs, nz, NVARS))
+#ifdef USE_OPENACC
+	! Keep halo buffers resident on the device to avoid per-call staging
+	!$acc enter data create(send_left, send_right, recv_left, recv_right)
+#endif
+	halos_allocated = .true.
+  end subroutine init_halo_buffers
+
+  subroutine free_halo_buffers()
+	implicit none
+	if (.not. halos_allocated) return
+#ifdef USE_OPENACC
+	if (acc_is_present(send_left)) then
+	  !$acc exit data delete(send_left, send_right, recv_left, recv_right)
+	end if
+#endif
+	if (allocated(send_left)) deallocate(send_left)
+	if (allocated(send_right)) deallocate(send_right)
+	if (allocated(recv_left)) deallocate(recv_left)
+	if (allocated(recv_right)) deallocate(recv_right)
+	halo_size = 0
+	halos_allocated = .false.
+  end subroutine free_halo_buffers
 
   !> @brief Allocate state storage with halos and set component pointers.
   subroutine new_state(atmo)
@@ -182,6 +221,10 @@ module module_types
 	real(wp), dimension(STEN_SIZE) :: stencil
 	real(wp), dimension(NVARS) :: d3_vals, vals
 
+#ifdef USE_OPENACC
+	call nvtx_push("X-Direction Tendency")
+#endif
+
 	call atmostat%exchange_halo_x( )
 
 	hv_coef = -hv_beta * dx / (16.0_wp*dt)
@@ -270,6 +313,10 @@ module module_types
 	  !$omp end parallel do
 #endif
 
+#ifdef USE_OPENACC
+	call nvtx_pop()
+#endif
+
   end subroutine xtend
 
 
@@ -291,6 +338,10 @@ module module_types
 	real(wp) :: r, u, w, t, p, hv_coef
 	real(wp), dimension(STEN_SIZE) :: stencil
 	real(wp), dimension(NVARS) :: d3_vals, vals
+
+#ifdef USE_OPENACC
+	call nvtx_push("Z-Direction Tendency")
+#endif
 
 	call atmostat%exchange_halo_z(ref)
 
@@ -403,13 +454,15 @@ module module_types
 		  end if
 		end do
 	  end do
-	end do
-	!$omp end parallel do
+	  end do
+	  !$omp end parallel do
+#endif
+
+#ifdef USE_OPENACC
+	call nvtx_pop()
 #endif
 
   end subroutine ztend
-
-
   !> @brief Exchange halo cells in x-direction with periodic boundaries.
   !! @param[inout] s State whose halos are updated.
   !! @details For serial runs, halos wrap locally. For MPI runs, exchanges
@@ -420,10 +473,15 @@ module module_types
     class(atmospheric_state), intent(inout) :: s
     integer :: k, ll, ierr
     integer :: send_size
-    real(wp), allocatable :: send_left(:,:,:), send_right(:,:,:)
-    real(wp), allocatable :: recv_left(:,:,:), recv_right(:,:,:)
     integer :: req(4), status(MPI_STATUS_SIZE, 4)
-	type(CTimer) :: mpi_timer
+    type(CTimer) :: mpi_timer
+
+    if (.not. halos_allocated) call init_halo_buffers()
+    send_size = halo_size
+
+#ifdef USE_OPENACC
+    call nvtx_push("Halo Exchange X")
+#endif
 
     if (nprocs == 1) then
       ! Serial case: local periodic boundary conditions
@@ -449,63 +507,92 @@ module module_types
 #endif
     else
       ! Parallel case: MPI communication
-      allocate(send_left(hs, nz, NVARS))
-      allocate(send_right(hs, nz, NVARS))
-      allocate(recv_left(hs, nz, NVARS))
-      allocate(recv_right(hs, nz, NVARS))
 
 #ifdef USE_OPENACC
       if (acc_is_present(s%mem)) then
-        !$acc update self(s%mem(1:hs,1:nz,:), s%mem(nx-hs+1:nx,1:nz,:))
-      end if
+        ! Pack halos on device to avoid host staging
+        !$acc parallel loop collapse(2) present(send_left, send_right, s%mem)
+        do ll = 1, NVARS
+          do k = 1, nz
+            send_left(1,k,ll)  = s%mem(1,k,ll)
+            send_left(2,k,ll)  = s%mem(2,k,ll)
+            send_right(1,k,ll) = s%mem(nx-1,k,ll)
+            send_right(2,k,ll) = s%mem(nx,k,ll)
+          end do
+        end do
+        !$acc end parallel loop
+
+        call mpi_timer%start("MPI: Communication")
+        !$acc host_data use_device(send_left, send_right, recv_left, recv_right)
+        call MPI_Irecv(recv_left, send_size, MPI_DOUBLE_PRECISION, &
+                       left_rank, 1, MPI_COMM_WORLD, req(1), ierr)
+        call MPI_Irecv(recv_right, send_size, MPI_DOUBLE_PRECISION, &
+                       right_rank, 2, MPI_COMM_WORLD, req(2), ierr)
+        call MPI_Isend(send_right, send_size, MPI_DOUBLE_PRECISION, &
+                       right_rank, 1, MPI_COMM_WORLD, req(3), ierr)
+        call MPI_Isend(send_left, send_size, MPI_DOUBLE_PRECISION, &
+                       left_rank, 2, MPI_COMM_WORLD, req(4), ierr)
+        call MPI_Waitall(4, req, status, ierr)
+        !$acc end host_data
+        call mpi_timer%stop()
+
+        ! Unpack halos back on device
+        !$acc parallel loop collapse(2) present(s%mem, recv_left, recv_right)
+        do ll = 1, NVARS
+          do k = 1, nz
+            s%mem(-1,k,ll)   = recv_left(1,k,ll)
+            s%mem(0,k,ll)    = recv_left(2,k,ll)
+            s%mem(nx+1,k,ll) = recv_right(1,k,ll)
+            s%mem(nx+2,k,ll) = recv_right(2,k,ll)
+          end do
+        end do
+        !$acc end parallel loop
+
+      else
 #endif
-
-      ! Prepare data to send
-      do ll = 1, NVARS
-        do k = 1, nz
-          send_left(1,k,ll) = s%mem(1,k,ll)
-          send_left(2,k,ll) = s%mem(2,k,ll)
-          send_right(1,k,ll) = s%mem(nx-1,k,ll)
-          send_right(2,k,ll) = s%mem(nx,k,ll)
+        ! Prepare data to send on host
+        do ll = 1, NVARS
+          do k = 1, nz
+            send_left(1,k,ll)  = s%mem(1,k,ll)
+            send_left(2,k,ll)  = s%mem(2,k,ll)
+            send_right(1,k,ll) = s%mem(nx-1,k,ll)
+            send_right(2,k,ll) = s%mem(nx,k,ll)
+          end do
         end do
-      end do
-      send_size = hs * nz * NVARS
 
+        call mpi_timer%start("MPI: Communication")
 
-	call mpi_timer%start("MPI: Communication")
+        ! Non-blocking send/receive with neighbors
+        call MPI_Irecv(recv_left, send_size, MPI_DOUBLE_PRECISION, &
+                       left_rank, 1, MPI_COMM_WORLD, req(1), ierr)
+        call MPI_Irecv(recv_right, send_size, MPI_DOUBLE_PRECISION, &
+                       right_rank, 2, MPI_COMM_WORLD, req(2), ierr)
+        call MPI_Isend(send_right, send_size, MPI_DOUBLE_PRECISION, &
+                       right_rank, 1, MPI_COMM_WORLD, req(3), ierr)
+        call MPI_Isend(send_left, send_size, MPI_DOUBLE_PRECISION, &
+                       left_rank, 2, MPI_COMM_WORLD, req(4), ierr)
+        call MPI_Waitall(4, req, status, ierr)
 
-      ! Non-blocking send/receive with neighbors
-      call MPI_Irecv(recv_left, send_size, MPI_DOUBLE_PRECISION, &
-                     left_rank, 1, MPI_COMM_WORLD, req(1), ierr)
-      call MPI_Irecv(recv_right, send_size, MPI_DOUBLE_PRECISION, &
-                     right_rank, 2, MPI_COMM_WORLD, req(2), ierr)
-      call MPI_Isend(send_right, send_size, MPI_DOUBLE_PRECISION, &
-                     right_rank, 1, MPI_COMM_WORLD, req(3), ierr)
-      call MPI_Isend(send_left, send_size, MPI_DOUBLE_PRECISION, &
-                     left_rank, 2, MPI_COMM_WORLD, req(4), ierr)
+        call mpi_timer%stop()
 
-      call MPI_Waitall(4, req, status, ierr)
-
-	call mpi_timer%stop()
-
-      ! Copy received data to halos
-      do ll = 1, NVARS
-        do k = 1, nz
-          s%mem(-1,k,ll) = recv_left(1,k,ll)
-          s%mem(0,k,ll) = recv_left(2,k,ll)
-          s%mem(nx+1,k,ll) = recv_right(1,k,ll)
-          s%mem(nx+2,k,ll) = recv_right(2,k,ll)
+        ! Copy received data to halos
+        do ll = 1, NVARS
+          do k = 1, nz
+            s%mem(-1,k,ll)   = recv_left(1,k,ll)
+            s%mem(0,k,ll)    = recv_left(2,k,ll)
+            s%mem(nx+1,k,ll) = recv_right(1,k,ll)
+            s%mem(nx+2,k,ll) = recv_right(2,k,ll)
+          end do
         end do
-      end do
-
-      deallocate(send_left, send_right, recv_left, recv_right)
-
 #ifdef USE_OPENACC
-      if (acc_is_present(s%mem)) then
-        !$acc update device(s%mem(-1:0,1:nz,:), s%mem(nx+1:nx+2,1:nz,:))
       end if
 #endif
+
     end if
+
+#ifdef USE_OPENACC
+    call nvtx_pop()
+#endif
 
   end subroutine exchange_halo_x
 
@@ -519,6 +606,10 @@ module module_types
 	class(atmospheric_state), intent(inout) :: s
 	class(reference_state), intent(in) :: ref
 	integer :: i, ll
+
+#ifdef USE_OPENACC
+	call nvtx_push("Halo Exchange Z")
+#endif
 
 #ifdef USE_OPENACC
 		  !$acc parallel loop collapse(2) present(s%mem, ref%density)
@@ -569,10 +660,15 @@ module module_types
 			s%mem(i,0,ll) = s%mem(i,1,ll)
 			s%mem(i,nz+1,ll) = s%mem(i,nz,ll)
 			s%mem(i,nz+2,ll) = s%mem(i,nz,ll)
-		  end if
+		end if
 		end do
 	  end do
 #endif
+
+#ifdef USE_OPENACC
+	call nvtx_pop()
+#endif
+
   end subroutine exchange_halo_z
 
   !> @brief Allocate reference profiles.

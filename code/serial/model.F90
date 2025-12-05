@@ -18,6 +18,7 @@ program atmosphere_model
   use parallel_timer
 #ifdef USE_OPENACC
   use openacc
+  use module_nvtx
 #endif
 #ifdef USE_OPENMP
   use omp_lib
@@ -51,6 +52,7 @@ program atmosphere_model
 
 #ifdef USE_OPENACC
   ! Assign each MPI rank to a different GPU (round-robin)
+  call nvtx_push("GPU Initialization")
   block
     integer :: num_gpus, my_gpu
     num_gpus = acc_get_num_devices(acc_device_nvidia)
@@ -59,6 +61,7 @@ program atmosphere_model
       call acc_set_device_num(my_gpu, acc_device_nvidia)
     end if
   end block
+  call nvtx_pop()
 #endif
 
   if (my_rank == 0) then
@@ -138,16 +141,21 @@ program atmosphere_model
   ! call write_record(oldstat,ref,etime)
 
 #ifdef USE_OPENACC
+  call nvtx_push("Data Transfer to GPU")
   !$acc enter data create(oldstat, newstat, flux, tend, ref)
   !$acc enter data copyin(oldstat%mem, newstat%mem, flux%mem, tend%mem)
   !$acc enter data copyin(ref%density, ref%denstheta, ref%idens, ref%idenstheta, ref%pressure)
   !$acc enter data attach(oldstat%mem, newstat%mem, flux%mem, tend%mem)
   !$acc enter data attach(ref%density, ref%denstheta, ref%idens, ref%idenstheta, ref%pressure)
+  call nvtx_pop()
 #endif
 
   ! Get initial tick count and the clock rate (ticks per second)
   call system_clock(t1, rate) 
 
+#ifdef USE_OPENACC
+  call nvtx_push("Main Time Loop")
+#endif
   ptime = int(sim_time/10.0)
   do while (etime < sim_time)
 
@@ -168,13 +176,18 @@ program atmosphere_model
     if (output_counter >= output_freq) then
       output_counter = output_counter - output_freq
 #ifdef USE_OPENACC
+      call nvtx_push("Data Update from GPU")
       !$acc update self(oldstat%mem)
+      call nvtx_pop()
 #endif
         ! --- For benchmark, removing file i/o
       ! call write_record(oldstat,ref,etime)
     end if
 
   end do
+#ifdef USE_OPENACC
+  call nvtx_pop()  ! End Main Time Loop
+#endif
 
   call total_mass_energy(mass1,te1)
   
@@ -182,9 +195,11 @@ program atmosphere_model
   ! call close_output( )
 
 #ifdef USE_OPENACC
+  call nvtx_push("Data Cleanup from GPU")
   !$acc exit data delete(oldstat%mem, newstat%mem, flux%mem, tend%mem)
   !$acc exit data delete(ref%density, ref%denstheta, ref%idens, ref%idenstheta, ref%pressure)
   !$acc exit data delete(oldstat, newstat, flux, tend, ref)
+  call nvtx_pop()
 #endif
 
   if (my_rank == 0) then
