@@ -1,3 +1,8 @@
+!> @brief Core data structures and halo exchange for prognostic fields.
+!! @details Defines reference/prognostic/flux/tendency containers, allocation
+!!          helpers, halo exchange in x/z, and stencil-based flux divergence
+!!          routines. Supports MPI domain decomposition with optional OpenMP or
+!!          OpenACC offload.
 module module_types
   use mpi
 #ifdef USE_OPENACC
@@ -24,23 +29,25 @@ module module_types
 
   public :: assignment(=)
 
+  !> @brief Hydrostatic reference profiles and interface values.
   type reference_state
-	real(wp), allocatable, dimension(:) :: density
-	real(wp), allocatable, dimension(:) :: denstheta
-	real(wp), allocatable, dimension(:) :: idens
-	real(wp), allocatable, dimension(:) :: idenstheta
-	real(wp), allocatable, dimension(:) :: pressure
+	real(wp), allocatable, dimension(:) :: density     !< Cell-centered hydrostatic density.
+	real(wp), allocatable, dimension(:) :: denstheta   !< Cell-centered rho*theta for hydrostatic state.
+	real(wp), allocatable, dimension(:) :: idens       !< Interface hydrostatic density.
+	real(wp), allocatable, dimension(:) :: idenstheta  !< Interface hydrostatic rho*theta.
+	real(wp), allocatable, dimension(:) :: pressure    !< Interface hydrostatic pressure.
 	contains
 	procedure, public :: new_ref
 	procedure, public :: del_ref
   end type reference_state
 
+  !> @brief Prognostic state (density, momentum, rho*theta) with halo padding.
   type atmospheric_state
-	real(wp), pointer, dimension(:,:,:) :: mem => null( )
-	real(wp), pointer, dimension(:,:) :: dens
-	real(wp), pointer, dimension(:,:) :: umom
-	real(wp), pointer, dimension(:,:) :: wmom
-	real(wp), pointer, dimension(:,:) :: rhot
+	real(wp), pointer, dimension(:,:,:) :: mem => null( ) !< Backing contiguous storage.
+	real(wp), pointer, dimension(:,:) :: dens             !< Density perturbation (rho').
+	real(wp), pointer, dimension(:,:) :: umom             !< x-momentum.
+	real(wp), pointer, dimension(:,:) :: wmom             !< z-momentum.
+	real(wp), pointer, dimension(:,:) :: rhot             !< rho*theta perturbation.
 	contains
 	procedure, public :: new_state
 	procedure, public :: set_state
@@ -50,24 +57,26 @@ module module_types
 	procedure, public :: exchange_halo_z
   end type atmospheric_state
 
+  !> @brief Flux container used during directional sweeps.
   type atmospheric_flux
-	real(wp), pointer, dimension(:,:,:) :: mem => null( )
-	real(wp), pointer, dimension(:,:) :: dens
-	real(wp), pointer, dimension(:,:) :: umom
-	real(wp), pointer, dimension(:,:) :: wmom
-	real(wp), pointer, dimension(:,:) :: rhot
+	real(wp), pointer, dimension(:,:,:) :: mem => null( ) !< Backing contiguous storage.
+	real(wp), pointer, dimension(:,:) :: dens             !< Flux of density.
+	real(wp), pointer, dimension(:,:) :: umom             !< Flux of x-momentum.
+	real(wp), pointer, dimension(:,:) :: wmom             !< Flux of z-momentum.
+	real(wp), pointer, dimension(:,:) :: rhot             !< Flux of rho*theta.
 	contains
 	procedure, public :: new_flux
 	procedure, public :: set_flux
 	procedure, public :: del_flux
   end type atmospheric_flux
 
+  !> @brief Right-hand-side tendencies from flux divergences and sources.
   type atmospheric_tendency
-	real(wp), pointer, dimension(:,:,:) :: mem => null( )
-	real(wp), pointer, dimension(:,:) :: dens
-	real(wp), pointer, dimension(:,:) :: umom
-	real(wp), pointer, dimension(:,:) :: wmom
-	real(wp), pointer, dimension(:,:) :: rhot
+	real(wp), pointer, dimension(:,:,:) :: mem => null( ) !< Backing contiguous storage.
+	real(wp), pointer, dimension(:,:) :: dens             !< d(rho)/dt tendency.
+	real(wp), pointer, dimension(:,:) :: umom             !< d(ru)/dt tendency.
+	real(wp), pointer, dimension(:,:) :: wmom             !< d(rw)/dt tendency.
+	real(wp), pointer, dimension(:,:) :: rhot             !< d(rho*theta)/dt tendency.
 	contains
 	procedure, public :: new_tendency
 	procedure, public :: set_tendency
@@ -82,6 +91,7 @@ module module_types
 
   contains
 
+  !> @brief Allocate state storage with halos and set component pointers.
   subroutine new_state(atmo)
 	implicit none
 	class(atmospheric_state), intent(inout) :: atmo
@@ -93,6 +103,7 @@ module module_types
 	atmo%rhot(1-hs:,1-hs:) => atmo%mem(:,:,I_RHOT)
   end subroutine new_state
 
+  !> @brief Fill entire state (including halos) with a constant value.
   subroutine set_state(atmo, xval)
 	implicit none
 	class(atmospheric_state), intent(inout) :: atmo
@@ -104,6 +115,7 @@ module module_types
 	atmo%mem(:,:,:) = xval
   end subroutine set_state
 
+  !> @brief Deallocate state storage and nullify component pointers.
   subroutine del_state(atmo)
 	implicit none
 	class(atmospheric_state), intent(inout) :: atmo
@@ -114,6 +126,11 @@ module module_types
 	nullify(atmo%rhot)
   end subroutine del_state
 
+  !> @brief Explicit Euler update: s2 = s0 + dt * tendency.
+  !! @param[inout] s2 Destination state updated in place.
+  !! @param[in] s0 Baseline state.
+  !! @param[in] tend Right-hand-side tendencies.
+  !! @param[in] dt Time step for this update.
   subroutine update(s2,s0,tend,dt)
 	implicit none
 	class(atmospheric_state), intent(inout) :: s2
@@ -145,6 +162,13 @@ module module_types
   end subroutine update
 
 
+  !> @brief Compute x-direction fluxes and tendencies (with hyper-viscosity).
+  !! @param[inout] tendency Accumulates d/dt contributions for all variables.
+  !! @param[inout] flux Workspace to store face fluxes.
+  !! @param[in] ref Hydrostatic reference used to recover full state.
+  !! @param[inout] atmostat State being differentiated (halos updated inside).
+  !! @param[in] dx Cell width in x.
+  !! @param[in] dt Time step (used for hyper-viscosity coefficient).
   subroutine xtend(tendency,flux,ref,atmostat,dx,dt)
 	implicit none
 	class(atmospheric_tendency), intent(inout) :: tendency
@@ -249,6 +273,13 @@ module module_types
   end subroutine xtend
 
 
+  !> @brief Compute z-direction fluxes/tendencies and add gravity source.
+  !! @param[inout] tendency Accumulates d/dt contributions for all variables.
+  !! @param[inout] flux Workspace to store face fluxes.
+  !! @param[in] ref Hydrostatic reference used to recover full state and pressure perturbations.
+  !! @param[inout] atmostat State being differentiated (halos updated inside).
+  !! @param[in] dz Cell height in z.
+  !! @param[in] dt Time step (used for hyper-viscosity coefficient).
   subroutine ztend(tendency,flux,ref,atmostat,dz,dt)
 	implicit none
 	class(atmospheric_tendency), intent(inout) :: tendency
@@ -379,6 +410,10 @@ module module_types
   end subroutine ztend
 
 
+  !> @brief Exchange halo cells in x-direction with periodic boundaries.
+  !! @param[inout] s State whose halos are updated.
+  !! @details For serial runs, halos wrap locally. For MPI runs, exchanges
+  !!          boundary layers with left/right ranks using non-blocking sends.
   subroutine exchange_halo_x(s)
     use mpi
     implicit none
@@ -474,6 +509,11 @@ module module_types
 
   end subroutine exchange_halo_x
 
+  !> @brief Apply vertical boundary conditions into z-direction halos.
+  !! @param[inout] s State whose vertical halos are updated.
+  !! @param[in] ref Reference density used for momentum scaling at vertical edges.
+  !! @details Enforces w=0 at top/bottom, scales u to maintain mass consistency,
+  !!          and mirrors scalar fields.
   subroutine exchange_halo_z(s,ref)
 	implicit none
 	class(atmospheric_state), intent(inout) :: s
@@ -535,6 +575,7 @@ module module_types
 #endif
   end subroutine exchange_halo_z
 
+  !> @brief Allocate reference profiles.
   subroutine new_ref(ref)
 	implicit none
 	class(reference_state), intent(inout) :: ref
@@ -545,6 +586,7 @@ module module_types
 	allocate(ref%pressure(nz+1))
   end subroutine new_ref
 
+  !> @brief Deallocate reference profiles.
   subroutine del_ref(ref)
 	implicit none
 	class(reference_state), intent(inout) :: ref
@@ -555,6 +597,7 @@ module module_types
 	deallocate(ref%pressure)
   end subroutine del_ref
 
+  !> @brief Allocate flux storage and component views.
   subroutine new_flux(flux)
 	implicit none
 	class(atmospheric_flux), intent(inout) :: flux
@@ -566,6 +609,7 @@ module module_types
 	flux%rhot => flux%mem(:,:,I_RHOT)
   end subroutine new_flux
 
+  !> @brief Fill entire flux array with a constant value.
   subroutine set_flux(flux, xval)
 	implicit none
 	class(atmospheric_flux), intent(inout) :: flux
@@ -577,6 +621,7 @@ module module_types
 	flux%mem(:,:,:) = xval
   end subroutine set_flux
 
+  !> @brief Deallocate flux storage and nullify component pointers.
   subroutine del_flux(flux)
 	implicit none
 	class(atmospheric_flux), intent(inout) :: flux
@@ -587,6 +632,7 @@ module module_types
 	nullify(flux%rhot)
   end subroutine del_flux
 
+  !> @brief Allocate tendency storage and component views.
   subroutine new_tendency(tend)
 	implicit none
 	class(atmospheric_tendency), intent(inout) :: tend
@@ -598,6 +644,7 @@ module module_types
 	tend%rhot => tend%mem(:,:,I_RHOT)
   end subroutine new_tendency
 
+  !> @brief Fill entire tendency array with a constant value.
   subroutine set_tendency(tend, xval)
 	implicit none
 	class(atmospheric_tendency), intent(inout) :: tend
@@ -609,6 +656,7 @@ module module_types
 	tend%mem(:,:,:) = xval
   end subroutine set_tendency
 
+  !> @brief Deallocate tendency storage and nullify component pointers.
   subroutine del_tendency(tend)
 	implicit none
 	class(atmospheric_tendency), intent(inout) :: tend
@@ -619,6 +667,7 @@ module module_types
 	nullify(tend%rhot)
   end subroutine del_tendency
 
+  !> @brief Assignment overload to copy entire atmospheric_state contents.
   subroutine state_equal_to_state(x,y)
 	implicit none
 	type(atmospheric_state), intent(inout) :: x

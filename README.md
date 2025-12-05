@@ -2,6 +2,10 @@
 ## 2-D Euler Equations
 First rule of fight club is we don't talk about fight club.
 
+![alt text](code/results/movie0000.jpeg)
+![alt text](code/results/movie0050.jpeg)
+![alt text](code/results/movie0100.jpeg)
+
 ## Directory structure
 - `code` contains the source code, scripts to run scaling tests in Leonardo
   - `serial` contains the main source code
@@ -15,7 +19,7 @@ First rule of fight club is we don't talk about fight club.
 - `runenv.sh` contains the commands to initialize the containerized environment
 
 ## Source code structure
-- `model.F90` contains the main routine
+- `model.F90` contains the main routine of the program
 - `module_output.F90` contains the routines relevant for output file generation in parallel
 - `module_parameters.F90` contains parameters for domain decomposition and solvers, as well as physical constants
 - `module_physics.F90` takes care of initial and boundary conditions, numerical solution and calculation of mass and energy budgets
@@ -24,10 +28,10 @@ First rule of fight club is we don't talk about fight club.
 
 ## Running the program
 ### Option A
-Make sure your system has the following packages installed: `cmake`, `graphviz`, `doxygen`, `gfortran`, `libmpich-dev`, `libnetcdff-dev`, `python3`, `python3-pip`, `build-essential` and should be able to be found by CMake. These are the package names in Ubuntu 22.02. You may install CUDA device drivers so you offload computation to GPU, if available. If you do this, skip Option B and continue below.
+Make sure your system has the following packages installed: `cmake`, `graphviz`, `doxygen`, `gfortran`, `libmpich-dev`, `libnetcdff-dev`, `python3`, `python3-pip`, `build-essential` and should be able to be found by CMake. These are the package names in Ubuntu 22.02. You may install CUDA device drivers so you offload computation to GPU if your system supports it. If you do this, skip Option B and continue below.
 
 ### Option B
-If you want to quickly install all of packages in an isolated environment, you can simply run `runenv.sh` and continue below. This assumes you have Docker engine installed on your machine
+If you want to quickly install all of the packages in an isolated environment, you can simply run `runenv.sh` and continue below. This assumes you have Docker engine installed on your machine.
 
 ### Build and run
 When you have all the packages installed:
@@ -51,6 +55,37 @@ If you want to manually run the executable file, you can do the following:
 ```bash
 cd serial/build
 mpirun -n 4 ./model 100 1000 10 # No of grid points in x-axis, number of timesteps, output frequency
+```
+
+### Documentation
+We used Doxygen to generate the documentation. Use the target `doc` on the build folder to do this. Note: do not try to generate it manually using `doxygen` command.
+```bash
+cd fightClub/serial
+mkdir build
+cd build
+cmake .. -DUSE_OPENACC=ON # if compiling on a system with MPI+GPU. otherwise don't include this flag and it will only compile with MPI+OpenMP flags
+make doc
+```
+
+On your web browser, you can view the webpage by accessing `file:///../fightClub/code/serial/build/doc/html/index.html`.
+
+### Output file
+An output file `output.nc` will be generated on the same location as the executable file. You may visualize it using `ncview` or VisIt. To compare the output file with the reference output files you can run the command
+```bash
+python3 nccmp3.py output-serial.nc output-serial-optimized.nc output.nc
+```
+This assumes you have a Python virtual environment with the packages from `requirements.txt` installed, if you went for Option A.
+
+Sample output of the program is below. If the ratios are at least 2.0 (our test case) then there may be a significant difference from the reference files and you may look at the results further.
+```bash
+#################
+Var Name            :  |1-2|                 ,  |2-3|                 ,  |2-3|/|1-2|
+rho                 :      1.4099532998e-25  ,      1.5196072173e-25  ,      1.0777713116e+00
+u                   :      8.3295645703e-27  ,      9.2624723271e-27  ,      1.1119995828e+00
+w                   :      5.0759644567e-27  ,      7.2049604373e-27  ,      1.4194268890e+00
+theta               :      2.0989239882e-26  ,      2.1411913543e-26  ,      1.0201376355e+00
+#################
+TEST PASSED.
 ```
 
 ### Sample output
@@ -243,15 +278,17 @@ rsync -arvzP code leo:/leonardo_scratch/large/userexternal/jrayo000
 ```
 
 ### Project Path
-```
+```bash
 /leonardo/pub/userexternal/jgordill/fightClub
 ```
+
 ### Modules
 #### MPI+OpenMP
-```
+```bash
 module purge
 
 # Compiler
+module load cmake/3.27.9
 module load gcc/12.2.0
 
 # MPI
@@ -259,13 +296,15 @@ module load openmpi/4.1.6--gcc--12.2.0-cuda-12.2
 
 # NetCDF Fortran
 module load netcdf-fortran/4.6.1--openmpi--4.1.6--gcc--12.2.0-spack0.22
+
 ```
 
 ### MPI+OpenACC
-```
+```bash
 module purge
 
 # Compiler
+module load cmake/3.27.9
 module load nvhpc/24.5
 
 # MPI
@@ -274,4 +313,27 @@ module load hpcx-mpi/2.19
 # NetCDF Fortran
 module load netcdf-fortran/4.6.1--hpcx-mpi--2.19--nvhpc--24.5
 module load binutils/2.42
+```
+
+### Python (for running output comparison test)
+Load packages
+```bash
+module purge
+
+module load python/3.11
+module load gcc/12.2.0
+module load openmpi/4.1.6--gcc--12.2.0-cuda-12.2
+module load netcdf-c/4.9.2--openmpi--4.1.6--gcc--12.2.0-spack0.22
+module load parallel-netcdf/1.12.3--openmpi--4.1.6--gcc--12.2.0-spack0.22
+```
+
+Create virtual environment and install packages. You may also have the option not to explicitly activate/deactivate the virtual env by directly using the executable files inside.
+```bash
+python3 -m venv pyenv
+pyenv/bin/pip install numpy netCDF4
+```
+
+Run the program
+```bash
+pyenv/bin/python nccmp3.py output-serial.nc output-serial-optimized.nc output.nc
 ```

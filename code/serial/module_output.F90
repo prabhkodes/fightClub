@@ -1,3 +1,8 @@
+!> @brief Parallel NetCDF output helpers.
+!! @details Collects state slices from each MPI rank and writes them serially to
+!!          a single NetCDF file. Rank 0 owns the file handle and receives data
+!!          from workers; local arrays are used as staging buffers to avoid
+!!          exposing solver internals.
 module module_output
   use mpi
   use calculation_types, only : wp, iowp
@@ -16,18 +21,22 @@ module module_output
   public :: close_output
 
   ! Local arrays (Small slices)
-  real(wp), allocatable, dimension(:,:) :: dens
-  real(wp), allocatable, dimension(:,:) :: uwnd
-  real(wp), allocatable, dimension(:,:) :: wwnd
-  real(wp), allocatable, dimension(:,:) :: theta
+  real(wp), allocatable, dimension(:,:) :: dens   !< Local density slice [kg m^-3].
+  real(wp), allocatable, dimension(:,:) :: uwnd   !< Local u-wind (x-momentum / rho) slice [m s^-1].
+  real(wp), allocatable, dimension(:,:) :: wwnd   !< Local w-wind (z-momentum / rho) slice [m s^-1].
+  real(wp), allocatable, dimension(:,:) :: theta  !< Local potential temperature slice [K].
 
   ! NetCDF IDs (Only valid on Rank 0)
-  integer :: ncid
-  integer :: dens_varid, uwnd_varid, wwnd_varid, theta_varid, t_varid
-  integer :: rec_out
+  integer :: ncid                                  !< NetCDF file identifier (rank 0).
+  integer :: dens_varid, uwnd_varid, wwnd_varid, theta_varid, t_varid !< Variable identifiers in the NetCDF file.
+  integer :: rec_out                               !< Current output record index (1-based NetCDF unlimited dimension).
 
   contains
 
+  !> @brief Create the NetCDF file and define variables.
+  !! @details Allocates local staging arrays on every rank. Rank 0 creates the
+  !!          `output.nc` file, defines dimensions/variables using the global
+  !!          grid sizes, and ends define mode. The record counter is reset.
   subroutine create_output
     implicit none
     integer :: t_dimid, x_dimid, z_dimid
@@ -60,6 +69,14 @@ module module_output
     rec_out = 1
   end subroutine create_output
 
+  !> @brief Gather local state from all ranks and append one time record.
+  !! @param[in] atmostat Prognostic state (density, momentum, rho*theta) local to the rank.
+  !! @param[in] ref Reference hydrostatic profile needed to convert to velocities/potential temperature.
+  !! @param[in] etime Simulation time stamp to associate with this record [s].
+  !! @details Rank 0 writes its own chunk then receives each worker's chunk in
+  !!          order (dimension and data messages) before writing them to their
+  !!          appropriate offsets. Workers send derived velocity and theta
+  !!          fields as dense buffers.
   subroutine write_record(atmostat,ref,etime)
     implicit none
     type(atmospheric_state), intent(in) :: atmostat
@@ -149,6 +166,9 @@ module module_output
     rec_out = rec_out + 1
   end subroutine write_record
 
+  !> @brief Close the NetCDF output and release buffers.
+  !! @details Deallocates local staging arrays on every rank. Rank 0 closes the
+  !!          NetCDF file handle.
   subroutine close_output
     implicit none
     
@@ -160,6 +180,11 @@ module module_output
     
   end subroutine close_output
 
+  !> @brief Abort on NetCDF errors with line context.
+  !! @param[in] ierr Status code returned by a NetCDF call.
+  !! @param[in] line Source code line number supplied by caller.
+  !! @details If `ierr` is non-zero, prints an informative message to stderr and
+  !!          aborts the MPI communicator.
   subroutine ncwrap(ierr,line)
     implicit none
     integer, intent(in) :: ierr
