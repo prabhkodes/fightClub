@@ -1,30 +1,46 @@
+!> @brief Hierarchical MPI wall-clock timer utilities.
+!! @details Provides scoped timers that can be started/stopped manually or
+!!          automatically (via finalizers) to gather inclusive/exclusive
+!!          microsecond timings across ranks. A stack tracks parent-child
+!!          relationships so exclusive time discounts the time spent in nested
+!!          regions. `print_timing_results` reduces the data across MPI ranks.
 module parallel_timer
     use mpi
     implicit none
     
     ! --- Internal Storage ---
-    integer, parameter :: MAX_TIMERS = 100
-    integer, parameter :: MAX_DEPTH = 50 
-    integer, parameter :: LABEL_LEN = 64
+    integer, parameter :: MAX_TIMERS = 100 !< Maximum number of distinct labels that can be tracked.
+    integer, parameter :: MAX_DEPTH = 50  !< Maximum nesting depth of simultaneous timers.
+    integer, parameter :: LABEL_LEN = 64  !< Maximum length of each timer label.
     
+    !> @brief Internal storage for one timer entry.
+    !! @details Tracks aggregated timing statistics per unique label. `total_time`
+    !!          stores inclusive wall time in microseconds, while `children_time`
+    !!          captures time spent in nested timers to allow computation of
+    !!          exclusive time.
     type :: timer_store_t
-        character(len=LABEL_LEN) :: label = ""
-        real(8) :: total_time = 0.0d0    
-        real(8) :: children_time = 0.0d0 
-        integer :: calls = 0             
-        logical :: active = .false.
+        character(len=LABEL_LEN) :: label = "" !< User supplied timer name.
+        real(8) :: total_time = 0.0d0          !< Inclusive accumulated wall time [microseconds].
+        real(8) :: children_time = 0.0d0       !< Time spent inside child timers [microseconds].
+        integer :: calls = 0                   !< Number of times this timer has been closed.
+        logical :: active = .false.            !< Flag indicating that the entry has been initialized.
     end type timer_store_t
     
-    type(timer_store_t), save :: database(MAX_TIMERS)
-    integer, save :: num_timers = 0
+    type(timer_store_t), save :: database(MAX_TIMERS) !< Persistent table of timers indexed by creation order.
+    integer, save :: num_timers = 0                   !< Number of timers currently in the table.
     
-    integer, save :: timer_stack(MAX_DEPTH)
-    integer, save :: stack_ptr = 0
+    integer, save :: timer_stack(MAX_DEPTH) !< Stack of active timer indices for computing exclusivity.
+    integer, save :: stack_ptr = 0          !< Pointer to the top of the stack (0 means empty).
 
     ! --- The Scoped Timer Object ---
+    !> @brief RAII-style timer that records elapsed wall time between construction and destruction.
+    !! @details `CTimer` instances look up or create a timer entry in `database`.
+    !!          The `start` method pushes the timer index on a stack; `stop`
+    !!          pops the stack, updates inclusive counts, and attributes time to
+    !!          the parent timer's children total.
     type :: CTimer
-        integer :: db_index = 0
-        real(8) :: start_time = 0.0d0
+        integer :: db_index = 0  !< Index into `database` for this timer instance.
+        real(8) :: start_time = 0.0d0 !< Time returned by `MPI_Wtime` when the timer was started.
     contains
         procedure :: start => start_timer_sub
         ! 1. Use the new CLASS version for manual calls
@@ -39,6 +55,12 @@ module parallel_timer
 
 contains
 
+    !> @brief Start or resume a named timer.
+    !! @param[inout] this The scoped timer object being started.
+    !! @param[in] label Human-readable label that keys the timer entry.
+    !! @details If a label has been seen before, the existing entry is reused so
+    !!          callers can repeatedly time the same routine. The timer index is
+    !!          pushed to `timer_stack` to capture nesting for exclusive timing.
     subroutine start_timer_sub(this, label)
         class(CTimer), intent(inout) :: this
         character(len=*), intent(in) :: label
@@ -73,6 +95,9 @@ contains
         end if
     end subroutine start_timer_sub
 
+    !> @brief Factory for a scoped timer that starts immediately.
+    !! @param[in] label Name of the timer entry.
+    !! @return t Initialized timer with an active start time.
     function new_timer(label) result(t)
         character(len=*), intent(in) :: label
         type(CTimer) :: t
@@ -80,6 +105,11 @@ contains
     end function new_timer
 
     ! --- MAIN LOGIC (Changed to CLASS) ---
+    !> @brief Stop a scoped timer and attribute elapsed wall time.
+    !! @param[inout] this Timer to stop; no-op if it was not started.
+    !! @details Computes elapsed microseconds using `MPI_Wtime`, increments call
+    !!          counters, and propagates time spent to the parent timer via the
+    !!          stack so that exclusive time can be derived.
     impure subroutine stop_timer(this)
         class(CTimer), intent(inout) :: this ! <--- Changed from TYPE to CLASS
         real(8) :: end_time, duration
@@ -107,6 +137,10 @@ contains
     end subroutine stop_timer
 
     ! --- WRAPPER FOR FINALIZER (Takes TYPE) ---
+    !> @brief Finalizer wrapper that stops timers that fall out of scope.
+    !! @param[inout] this Timer being finalized.
+    !! @details Enables RAII-style usage where `CTimer` local variables
+    !!          automatically record elapsed time when the block exits.
     impure subroutine stop_timer_final(this)
         type(CTimer), intent(inout) :: this ! <--- Strictly TYPE for Final
         ! Just forward the call to the main logic
@@ -114,6 +148,11 @@ contains
     end subroutine stop_timer_final
 
     ! --- Parallel Reporting ---
+    !> @brief Reduce and print timing statistics across all MPI ranks.
+    !! @details For each timer label, computes the maximum inclusive time,
+    !!          maximum exclusive time (discounting nested timers), average
+    !!          inclusive time, and total number of calls aggregated over the
+    !!          communicator. Only rank 0 prints the table.
     subroutine print_timing_results()
         integer :: i, rank, ierr, world_size
         real(8) :: local_total, local_excl

@@ -1,3 +1,8 @@
+!> @brief Physics driver for the 2-D compressible Euler solver.
+!! @details Owns prognostic/reference state, initializes fields, advances the
+!!          solution via dimensionally split Runge-Kutta, and reports conserved
+!!          quantities. Routines are instrumented with timers for MPI-wide
+!!          profiling and support CPU or OpenACC offload paths.
 module module_physics
   use mpi
 #ifdef USE_OPENACC
@@ -24,17 +29,24 @@ module module_physics
   public :: rungekutta
   public :: total_mass_energy
 
-  real(wp), public :: dt
-  real(wp) :: dx, dz
+  real(wp), public :: dt       !< Stable time step selected from CFL condition.
+  real(wp) :: dx, dz           !< Grid spacing in x and z (local but consistent with global nx).
 
-  type(atmospheric_state), public :: oldstat
-  type(atmospheric_state), public :: newstat
-  type(atmospheric_tendency), public :: tend
-  type(atmospheric_flux), public :: flux
-  type(reference_state), public :: ref
+  type(atmospheric_state), public :: oldstat !< Current prognostic state (density, momentum, rho*theta).
+  type(atmospheric_state), public :: newstat !< Next-step prognostic state.
+  type(atmospheric_tendency), public :: tend !< Tendency workspace for flux divergences and sources.
+  type(atmospheric_flux), public :: flux     !< Flux workspace reused across sweeps.
+  type(reference_state), public :: ref       !< Hydrostatic background state.
 
   contains
 
+  !> @brief Initialize grid spacing, states, reference profiles, and dt.
+  !! @param[out] etime Simulation time (reset to 0).
+  !! @param[out] output_counter Accumulator for output cadence (reset to 0).
+  !! @param[out] dt Chosen stable time step based on min(dx,dz), `max_speed`, and `cfl`.
+  !! @details Allocates state/flux/tendency arrays, computes quadrature-weighted
+  !!          initial perturbation fields using `thermal`, builds hydrostatic
+  !!          reference columns, and logs configuration on rank 0.
   subroutine init(etime,output_counter,dt)
     implicit none
 
@@ -120,6 +132,14 @@ module module_physics
     end if
   end subroutine init
 
+  !> @brief Third-order Runge-Kutta driver with dimensional splitting.
+  !! @param[inout] s0 Baseline state used for stages (often `oldstat`).
+  !! @param[inout] s1 Scratch/target state for intermediate stages.
+  !! @param[inout] fl Flux workspace shared across stages.
+  !! @param[inout] tend Tendency workspace shared across stages.
+  !! @param[in] dt Time step size for this full RK update.
+  !! @details Alternates the order of x- then z-sweeps each call to achieve
+  !!          overall second-order accuracy in time when splitting.
   subroutine rungekutta(s0,s1,fl,tend,dt)
     implicit none
 
@@ -165,6 +185,14 @@ module module_physics
 
   ! Semi-discretized step in time:
   ! s2 = s0 + dt * rhs(s1)
+  !> @brief Perform one directional sweep update.
+  !! @param[in] s0 Baseline state (input).
+  !! @param[inout] s1 State to differentiate (also receives halo updates).
+  !! @param[inout] s2 Destination state after applying `tend`.
+  !! @param[in] dt Time step for this sub-stage.
+  !! @param[in] dir Direction flag (`DIR_X` or `DIR_Z`) selecting flux routine.
+  !! @param[inout] fl Flux workspace.
+  !! @param[inout] tend Tendency workspace.
   subroutine step(s0, s1, s2, dt, dir, fl, tend)
     implicit none
 
@@ -187,6 +215,15 @@ module module_physics
     call s2%update(s0,tend,dt)
   end subroutine step
 
+  !> @brief Compute initial perturbation and hydrostatic background at a point.
+  !! @param[in] x Horizontal coordinate [m].
+  !! @param[in] z Vertical coordinate [m].
+  !! @param[out] r Density perturbation (rho').
+  !! @param[out] u x-velocity perturbation.
+  !! @param[out] w z-velocity perturbation.
+  !! @param[out] t Potential temperature perturbation.
+  !! @param[out] hr Hydrostatic background density.
+  !! @param[out] ht Hydrostatic background potential temperature.
   subroutine thermal(x,z,r,u,w,t,hr,ht)
     implicit none
     type(CTimer) :: pll_timer 
@@ -202,6 +239,12 @@ module module_physics
     t = t + ellipse(x,z,3.0_wp,hxlen,p1,p1,p1)
   end subroutine thermal
 
+  !> @brief Hydrostatic background with constant potential temperature.
+  !! @param[in] z Vertical coordinate [m].
+  !! @param[out] r Hydrostatic density at height z.
+  !! @param[out] t Hydrostatic potential temperature (constant here).
+  !! @details Integrates hydrostatic balance analytically using Exner function
+  !!          to obtain density profile consistent with constant theta.
   subroutine hydrostatic_const_theta(z,r,t)
     implicit none
 
@@ -219,6 +262,13 @@ module module_physics
     r = rt / t
   end subroutine hydrostatic_const_theta
 
+  !> @brief Smooth cosine-squared elliptical perturbation.
+  !! @param[in] x Horizontal coordinate [m].
+  !! @param[in] z Vertical coordinate [m].
+  !! @param[in] amp Amplitude of the perturbation.
+  !! @param[in] x0,z0 Center of ellipse.
+  !! @param[in] x1,z1 Horizontal/vertical radii.
+  !! @return val Perturbation value at (x,z).
   elemental function ellipse(x,z,amp,x0,z0,x1,z1) result(val)
     implicit none
     
@@ -237,6 +287,7 @@ module module_physics
     end if
   end function ellipse
 
+  !> @brief Release allocated state/flux/tendency/reference storage.
   subroutine finalize()
     implicit none
     call oldstat%del_state( )
@@ -247,6 +298,12 @@ module module_physics
     call free_halo_buffers()
   end subroutine finalize
 
+  !> @brief Compute global total mass and total energy.
+  !! @param[out] mass Integrated mass over the domain.
+  !! @param[out] te Integrated total energy (kinetic + internal).
+  !! @details Accumulates local contributions (optionally on GPU), then performs
+  !!          MPI all-reduce to obtain global totals. Uses reference state to
+  !!          reconstruct full density/potential temperature.
   subroutine total_mass_energy(mass,te)
     implicit none
     

@@ -1,3 +1,9 @@
+!> @brief Main driver for the 2-D compressible Euler solver.
+!! @details Initializes domain/physics, runs the Runge-Kutta time stepping with
+!!          dimensional splitting, optionally outputs diagnostics, and reports
+!!          mass/energy conservation plus wall-clock timing. Command line
+!!          arguments allow overriding grid size, simulation length, and output
+!!          frequency.
 program atmosphere_model
   use mpi
   use calculation_types, only : wp
@@ -19,25 +25,25 @@ program atmosphere_model
 #endif
   implicit none
 
-  real(wp) :: etime
-  real(wp) :: ptime
-  real(wp) :: output_counter
-  real(wp) :: pctime
-  real(wp) :: mass0, te0
-  real(wp) :: mass1, te1
-  integer(8) :: t1, t2, rate
+  real(wp) :: etime            !< Current simulation time [s].
+  real(wp) :: ptime            !< Interval used for periodic progress reporting.
+  real(wp) :: output_counter   !< Accumulator that triggers output writes.
+  real(wp) :: pctime           !< Percentage of simulation completed.
+  real(wp) :: mass0, te0       !< Initial total mass and energy.
+  real(wp) :: mass1, te1       !< Final total mass and energy.
+  integer(8) :: t1, t2, rate   !< Raw tick counters and tick rate from `system_clock`.
 
-  integer :: ierr
-  integer :: my_rank
-  integer :: dt_values(8)
-  integer :: arg_count
-  integer :: arg_status
-  integer :: nx_cli
-  real(wp) :: sim_time_cli
-  real(wp) :: output_freq_cli
-  character(len=64) :: arg
-  real(8) :: final_duration
-  integer :: num_procs
+  integer :: ierr              !< MPI error status.
+  integer :: my_rank           !< Rank of current MPI task.
+  integer :: dt_values(8)      !< Values returned by `date_and_time`.
+  integer :: arg_count         !< Number of CLI arguments detected.
+  integer :: arg_status        !< I/O status for CLI parsing.
+  integer :: nx_cli            !< Grid cells in x supplied on CLI (global).
+  real(wp) :: sim_time_cli     !< Total simulation time supplied on CLI [s].
+  real(wp) :: output_freq_cli  !< Output cadence supplied on CLI [s].
+  character(len=64) :: arg     !< Temporary buffer used when reading CLI values.
+  real(8) :: final_duration    !< Wall-clock duration in seconds computed from ticks.
+  integer :: num_procs         !< Number of MPI ranks participating.
 
 
   call MPI_INIT(ierr)
