@@ -1,13 +1,3 @@
-# load the ff modules first before building
-# module load cmake/3.27.9
-# module load nvhpc/24.5
-# module load hpcx-mpi/2.19
-# module load netcdf-fortran/4.6.1--hpcx-mpi--2.19--nvhpc--24.5
-# module load binutils/2.42
-# module load python/3.11
-# module load hdf5/1.14.3--hpcx-mpi--2.19--nvhpc--24.5
-# module load parallel-netcdf/1.12.3--hpcx-mpi--2.19--nvhpc--24.5
-
 cmake_minimum_required(VERSION 3.18)
 project(AtmosModel LANGUAGES Fortran)
 
@@ -17,11 +7,6 @@ option(USE_OPENACC "Enable OpenACC (NVHPC) instead of OpenMP" OFF)
 # ------------------------------------------------------------
 # NetCDF (Fortran + C) flags via nf-config / nc-config
 # ------------------------------------------------------------
-# These commands mirror:
-#   FCFLAGS_BASE = -I. `nf-config --fflags`
-#   LDFLAGS      = -L`nc-config --libdir` `nf-config --flibs`
-#
-# Assumes nf-config and nc-config are in PATH on the cluster.
 execute_process(
     COMMAND nf-config --fflags
     OUTPUT_VARIABLE NF_FFLAGS
@@ -45,8 +30,6 @@ separate_arguments(NF_FLIBS)
 # ------------------------------------------------------------
 # MPI
 # ------------------------------------------------------------
-# On your cluster, CMAKE_Fortran_COMPILER will usually be set to mpif90/mpifort
-# by the environment (e.g. module system). We still use find_package for safety.
 find_package(MPI REQUIRED Fortran)
 
 # ------------------------------------------------------------
@@ -69,14 +52,9 @@ add_executable(model ${MODEL_SOURCES})
 # Base NetCDF flags
 target_compile_options(model PRIVATE ${NF_FFLAGS})
 
-# Local include (equivalent to -I.)
-# target_include_directories(model PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-
 # Choose between OpenACC and OpenMP-style build
 if(USE_OPENACC)
     message(STATUS "Building with OpenACC (NVHPC)")
-    # Equivalent of:
-    #   FCFLAGS = -fast -acc -gpu=managed -Minfo=accel -Mpreprocess $(FCFLAGS_BASE) -DUSE_OPENACC
     target_compile_definitions(model PRIVATE USE_OPENACC)
     target_compile_options(model PRIVATE
         -fast
@@ -91,8 +69,6 @@ if(USE_OPENACC)
     )
 else()
     message(STATUS "Building with OpenMP-style flags")
-    # Equivalent of:
-    #   FCFLAGS = -Ofast $(FCFLAGS_BASE) -fPIC -fopenmp -DUSE_OPENMP -cpp
     target_compile_definitions(model PRIVATE USE_OPENMP)
     target_compile_options(model PRIVATE
         -Ofast
@@ -121,10 +97,19 @@ target_link_libraries(model PRIVATE ${NF_FLIBS} MPI::MPI_Fortran)
 # ------------------------------------------------------------
 find_package(Doxygen)
 if(Doxygen_FOUND)
-    set(DOXYGEN_IN  ${CMAKE_SOURCE_DIR}/Doxyfile) # original config file
+    set(DOXYGEN_IN  ${CMAKE_SOURCE_DIR}/doc/Doxyfile) # original config file
     set(DOXYGEN_OUT ${CMAKE_BINARY_DIR}/doc/Doxyfile) # where to store inside 'build' folder
+    # set(DOXYGEN_MD_IN  ${CMAKE_SOURCE_DIR}/doc/README.md) # original config file
+    # set(DOXYGEN_MD_OUT ${CMAKE_BINARY_DIR}/doc/README.md) # where to store inside 'build' folder
+    set(DOXYGEN_STYLE1_IN  ${CMAKE_SOURCE_DIR}/doc/custom.css) # original config file
+    set(DOXYGEN_STYLE1_OUT ${CMAKE_BINARY_DIR}/doc/custom.css) # where to store inside 'build' folder
+    set(DOXYGEN_STYLE2_IN  ${CMAKE_SOURCE_DIR}/doc/custom_dark_theme.css) # original config file
+    set(DOXYGEN_STYLE2_OUT ${CMAKE_BINARY_DIR}/doc/custom_dark_theme.css) # where to store inside 'build' folder
 
     configure_file(${DOXYGEN_IN} ${DOXYGEN_OUT} @ONLY)
+    # configure_file(${DOXYGEN_MD_IN} ${DOXYGEN_MD_OUT} @ONLY)
+    configure_file(${DOXYGEN_STYLE1_IN} ${DOXYGEN_STYLE1_OUT} @ONLY)
+    configure_file(${DOXYGEN_STYLE2_IN} ${DOXYGEN_STYLE2_OUT} @ONLY)
 
     add_custom_target(doc
         COMMAND ${DOXYGEN_EXECUTABLE} ${DOXYGEN_OUT}
@@ -135,7 +120,7 @@ if(Doxygen_FOUND)
 endif()
 
 # ------------------------------------------------------------
-# Test setup (replicates `make test`)
+# Test setup
 # ------------------------------------------------------------
 enable_testing()
 
@@ -149,18 +134,11 @@ if(REF_NC_FILES)
     file(COPY ${REF_NC_FILES} DESTINATION ${CMAKE_CURRENT_BINARY_DIR})
 endif()
 
-# Test command closely mirrors the Makefile's `test` target:
-#   1. Run the model with MPI
-#   2. Parse Fractional Delta Mass / Energy
-#   3. Check thresholds with awk
-#   4. Run python3 nccmp3.py ...
-#
-# Note: We use bash -c and escape $ as \$ for CMake.
 add_test(
     NAME model_test
     COMMAND bash -c
     "echo \"TEST: Running model...\"; \
-     OUTPUT=\$(mpirun -np 1 ./model 100 1000 10); \
+     OUTPUT=\$(mpirun -np 4 ./model 100 1000 10); \
      MASS=\$(echo \"\${OUTPUT}\" | awk '/Fractional Delta Mass/{print \$NF}'); \
      ENERGY=\$(echo \"\${OUTPUT}\" | awk '/Fractional Delta Energy/{print \$NF}'); \
      awk -v m=\"\${MASS}\" -v e=\"\${ENERGY}\" 'BEGIN { \
